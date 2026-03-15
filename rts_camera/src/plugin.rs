@@ -13,6 +13,13 @@ pub struct RtsCamera {
     pub zoom_speed: f32,
     pub min_zoom: f32,
     pub max_zoom: f32,
+    /// Y do którego pivot dąży (ustawiany przez raycast w camera.rs).
+    pub pivot_y_target: f32,
+    /// Szybkość lerpa pivot.y → pivot_y_target.
+    pub pivot_y_lerp_speed: f32,
+    /// true = raycast steruje Y, false = manual override.
+    pub raycast_active: bool,
+    pub manual_y_speed: f32,
 }
 
 impl Default for RtsCamera {
@@ -26,12 +33,14 @@ impl Default for RtsCamera {
             zoom_speed: 8.0,
             min_zoom: 15.0,
             max_zoom: 250.0,
+            pivot_y_target: 0.0,
+            pivot_y_lerp_speed: 8.0,
+            raycast_active: true,
+            manual_y_speed: 20.0,
         }
     }
 }
 
-/// Obecność tego komponentu oznacza że RTS camera jest aktywna.
-/// Dodawany/usuwany przez switching system w main.rs.
 #[derive(Component)]
 pub struct RtsActive;
 
@@ -42,10 +51,13 @@ impl Plugin for RtsCameraPlugin {
         app.add_systems(Update, rts_pan)
             .add_systems(Update, rts_rotate)
             .add_systems(Update, rts_zoom)
-            .add_systems(Update, rts_apply_transform
-                .after(rts_pan)
-                .after(rts_rotate)
-                .after(rts_zoom));
+            .add_systems(
+                Update,
+                rts_apply_transform
+                    .after(rts_pan)
+                    .after(rts_rotate)
+                    .after(rts_zoom),
+            );
     }
 }
 
@@ -68,6 +80,8 @@ fn rts_pan(
         if delta != Vec3::ZERO {
             let speed = cam.pan_speed * (cam.zoom / 80.0);
             cam.pivot += delta.normalize() * speed * time.delta_secs();
+            // Pan po XZ re-aktywuje raycast — pozwól mu znaleźć nowy grunt.
+            cam.raycast_active = true;
         }
     }
 }
@@ -98,9 +112,7 @@ fn rts_zoom(
     }
 }
 
-fn rts_apply_transform(
-    mut query: Query<(&RtsCamera, &mut Transform), With<RtsActive>>,
-) {
+fn rts_apply_transform(mut query: Query<(&RtsCamera, &mut Transform), With<RtsActive>>) {
     for (cam, mut transform) in query.iter_mut() {
         let pitch_rad = PITCH_DEG.to_radians();
         let yaw_rad   = cam.yaw.to_radians();
