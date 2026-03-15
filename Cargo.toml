@@ -1,12 +1,13 @@
-[workspace]
-members = ["voxel_engine", "debug_ui"]
-
 [package]
 name = "voxel_story"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = ["voxel_engine", "debug_ui", "spectator"]
+
 [dependencies]
 bevy = "0.18.1"
 voxel_engine = { path = "./voxel_engine" }
-debug_ui = { path = "./debug_ui" }
+debug_ui     = { path = "./debug_ui" }
+spectator    = { path = "./spectator" }
