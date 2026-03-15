@@ -103,10 +103,12 @@ fn setup(
     mut world: ResMut<VoxelWorld>,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
 ) {
+    let cfg = WorldConfig::new();
+    let generator = IslandGenerator::from_config(&cfg);
     // Kamera z atmosferą i mgłą
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(200., 80., 200.).looking_at(Vec3::new(64., 32., 64.), Vec3::Y),
+        Transform::from_translation(cfg.camera_pos()).looking_at(cfg.camera_target(), Vec3::Y),
         Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
         DistanceFog {
             color: Color::srgba(0.5, 0.67, 0.85, 1.0),
@@ -129,9 +131,6 @@ fn setup(
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, 0.4, 0.)),
     ));
-
-    let cfg = WorldConfig::new();
-    let generator = IslandGenerator::from_config(&cfg);
 
     for cx in 0..cfg.chunks.x {
         for cz in 0..cfg.chunks.z {

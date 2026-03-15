@@ -39,3 +39,8 @@ impl WorldConfig {
         bevy::math::Vec3::new(c.x as f32, c.y as f32, c.z as f32)
     }
 }
+impl Default for WorldConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
