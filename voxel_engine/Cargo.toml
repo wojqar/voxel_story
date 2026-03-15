@@ -1,0 +1,12 @@
+[package]
+name = "voxel_engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy ="0.18.1"
+noise = "0.9"
+
+[features]
+default = ["rendering"]
+rendering = ["bevy/bevy_render", "bevy/bevy_pbr"]

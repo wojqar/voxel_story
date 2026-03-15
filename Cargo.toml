@@ -1,0 +1,12 @@
+[workspace]
+members = ["voxel_engine", "debug_ui"]
+
+[package]
+name = "voxel_story"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.18.1"
+voxel_engine = { path = "./voxel_engine" }
+debug_ui = { path = "./debug_ui" }
