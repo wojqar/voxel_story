@@ -1,12 +1,12 @@
-use bevy::prelude::*;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+use bevy::prelude::*;
+use debug_ui::{DebugMetrics, DebugUiPlugin};
 use voxel_engine::{
     RenderingPlugin, VoxelEnginePlugin, VoxelWorld,
+    chunk::CHUNK_SIZE,
     generation::{WorldGenerator, heightmap::HeightmapGenerator},
     rendering::{ChunkEntity, NeedsRemesh},
-    chunk::CHUNK_SIZE,
 };
-use debug_ui::{DebugUiPlugin, DebugMetrics};
 
 fn main() {
     App::new()
@@ -19,7 +19,7 @@ fn main() {
 }
 
 fn update_debug_metrics(
-    world:       Res<VoxelWorld>,
+    world: Res<VoxelWorld>,
     diagnostics: Res<DiagnosticsStore>,
     mut metrics: ResMut<DebugMetrics>,
 ) {
@@ -33,12 +33,12 @@ fn update_debug_metrics(
         .and_then(|d| d.smoothed())
         .unwrap_or(0.0);
 
-    metrics.set("Performance", "FPS",        format!("{fps:.1}"));
+    metrics.set("Performance", "FPS", format!("{fps:.1}"));
     metrics.set("Performance", "Frame time", format!("{frame_ms:.2} ms"));
-    metrics.set("World", "Chunks",  world.chunk_count());
-    metrics.set("World", "Voxels",  world.chunk_count() * CHUNK_SIZE.pow(3));
-    metrics.set("World", "Solid",   world.count_solid_voxels());
-    metrics.set("World", "RAM",     format!("{:.1} MB", read_ram_mb()));
+    metrics.set("World", "Chunks", world.chunk_count());
+    metrics.set("World", "Voxels", world.chunk_count() * CHUNK_SIZE.pow(3));
+    metrics.set("World", "Solid", world.count_solid_voxels());
+    metrics.set("World", "RAM", format!("{:.1} MB", read_ram_mb()));
 }
 
 fn read_ram_mb() -> f64 {
@@ -46,7 +46,8 @@ fn read_ram_mb() -> f64 {
     if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
         for line in status.lines() {
             if line.starts_with("VmRSS:") {
-                let kb: f64 = line.split_whitespace()
+                let kb: f64 = line
+                    .split_whitespace()
                     .nth(1)
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(0.0);
@@ -60,8 +61,7 @@ fn read_ram_mb() -> f64 {
 fn setup(mut commands: Commands, mut world: ResMut<VoxelWorld>) {
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(-120., 100., -120.)
-            .looking_at(Vec3::new(0., 0., 0.), Vec3::Y),
+        Transform::from_xyz(-120., 100., -120.).looking_at(Vec3::new(0., 0., 0.), Vec3::Y),
     ));
 
     commands.spawn((

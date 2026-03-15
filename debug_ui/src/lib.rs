@@ -1,2 +1,2 @@
 pub mod plugin;
-pub use plugin::{DebugUiPlugin, DebugMetrics};
+pub use plugin::{DebugMetrics, DebugUiPlugin};

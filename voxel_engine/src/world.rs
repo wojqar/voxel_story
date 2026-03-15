@@ -1,5 +1,5 @@
 // world.rs
-use crate::chunk::{Chunk, CHUNK_SIZE};
+use crate::chunk::{CHUNK_SIZE, Chunk};
 use bevy::prelude::*;
 use std::collections::HashMap;
 
@@ -37,14 +37,17 @@ impl VoxelWorld {
         (chunk, local)
     }
     pub fn chunk_count(&self) -> usize {
-    self.chunks.len()
+        self.chunks.len()
     }
 
     pub fn count_solid_voxels(&self) -> usize {
-        self.chunks.values()
-            .flat_map(|c| (0..CHUNK_SIZE).flat_map(move |y|
-                (0..CHUNK_SIZE).flat_map(move |z|
-                    (0..CHUNK_SIZE).map(move |x| c.get(x, y, z)))))
+        self.chunks
+            .values()
+            .flat_map(|c| {
+                (0..CHUNK_SIZE).flat_map(move |y| {
+                    (0..CHUNK_SIZE).flat_map(move |z| (0..CHUNK_SIZE).map(move |x| c.get(x, y, z)))
+                })
+            })
             .filter(|v| !v.is_air())
             .count()
     }
