@@ -1,4 +1,6 @@
+use crate::CHUNK_SIZE;
 use crate::chunk::Chunk;
+use crate::voxel::VoxelId;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
@@ -31,6 +33,37 @@ impl VoxelWorld {
 
     pub fn solid_voxel_count(&self) -> usize {
         self.solid_count
+    }
+
+    pub fn set_voxel(&mut self, world_pos: IVec3, id: VoxelId) -> bool {
+        let cs = CHUNK_SIZE as i32;
+        let chunk_coord = IVec3::new(
+            world_pos.x.div_euclid(cs),
+            world_pos.y.div_euclid(cs),
+            world_pos.z.div_euclid(cs),
+        );
+        let lx = world_pos.x.rem_euclid(cs) as usize;
+        let ly = world_pos.y.rem_euclid(cs) as usize;
+        let lz = world_pos.z.rem_euclid(cs) as usize;
+
+        let Some(chunk) = self.chunks.get_mut(&chunk_coord) else {
+            return false;
+        };
+
+        let old = chunk.get(lx, ly, lz);
+        if old == id {
+            return false;
+        }
+
+        if old.is_air() && !id.is_air() {
+            self.solid_count += 1;
+        }
+        if !old.is_air() && id.is_air() {
+            self.solid_count -= 1;
+        }
+
+        chunk.set(lx, ly, lz, id);
+        true
     }
 }
 

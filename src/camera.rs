@@ -38,7 +38,12 @@ fn spawn_pivot_marker(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let inner = RING_OUTER_RADIUS * RING_INNER_RATIO;
-    let mesh = meshes.add(Annulus::new(inner, RING_OUTER_RADIUS).mesh().resolution(64).build());
+    let mesh = meshes.add(
+        Annulus::new(inner, RING_OUTER_RADIUS)
+            .mesh()
+            .resolution(64)
+            .build(),
+    );
     let material = materials.add(StandardMaterial {
         base_color: Color::srgba(1.0, 0.85, 0.1, 0.9),
         emissive: LinearRgba::new(0.8, 0.6, 0.0, 1.0),
@@ -65,7 +70,9 @@ fn camera_switch(
     active_spectator: Query<(), With<SpectatorActive>>,
     mut marker_q: Query<&mut Visibility, With<PivotMarker>>,
 ) {
-    if !keys.just_pressed(KeyCode::Tab) { return; }
+    if !keys.just_pressed(KeyCode::Tab) {
+        return;
+    }
 
     let is_spectator = !active_spectator.is_empty();
 
@@ -92,7 +99,7 @@ fn camera_switch(
         }
         for (e, mut spec, transform) in spectator_q.iter_mut() {
             let (yaw, pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
-            spec.yaw   = yaw.to_degrees();
+            spec.yaw = yaw.to_degrees();
             spec.pitch = pitch.to_degrees();
             commands.entity(e).insert(SpectatorActive);
         }
@@ -114,7 +121,9 @@ fn rts_pivot_y(
             cam.raycast_active = false;
         }
 
-        if !cam.raycast_active { continue; }
+        if !cam.raycast_active {
+            continue;
+        }
 
         if let Some(y) = ground_at(&world, cam.pivot.x, cam.pivot.z) {
             cam.pivot_y_target = y;
@@ -130,7 +139,9 @@ fn update_pivot_marker(
     mut marker_q: Query<&mut Transform, With<PivotMarker>>,
 ) {
     let Ok(cam) = cam_q.single() else { return };
-    let Ok(mut transform) = marker_q.single_mut() else { return };
+    let Ok(mut transform) = marker_q.single_mut() else {
+        return;
+    };
 
     transform.translation = cam.pivot + Vec3::Y * RING_Y_OFFSET;
     transform.rotation = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
@@ -144,7 +155,9 @@ fn ground_at(world: &VoxelWorld, wx: f32, wz: f32) -> Option<f32> {
 
     for wy in (0..WORLD_HEIGHT).rev() {
         let chunk_coord = IVec3::new(x.div_euclid(cs), wy.div_euclid(cs), z.div_euclid(cs));
-        let Some(chunk) = world.get_chunk(chunk_coord) else { continue };
+        let Some(chunk) = world.get_chunk(chunk_coord) else {
+            continue;
+        };
 
         let lx = x.rem_euclid(cs) as usize;
         let ly = wy.rem_euclid(cs) as usize;

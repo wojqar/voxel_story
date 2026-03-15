@@ -1,11 +1,13 @@
 mod camera;
 mod diagnostics;
+mod editing;
 mod world_setup;
 
 use bevy::prelude::*;
 use camera::CameraPlugin;
 use debug_ui::DebugUiPlugin;
 use diagnostics::DiagnosticsPlugin;
+use editing::EditingPlugin;
 use rts_camera::RtsCameraPlugin;
 use spectator::SpectatorPlugin;
 use voxel_engine::{RenderingPlugin, VoxelEnginePlugin};
@@ -25,6 +27,7 @@ fn main() {
             WorldSetupPlugin,
             CameraPlugin,
             DiagnosticsPlugin,
+            EditingPlugin,
         ))
         .run();
 }

@@ -244,7 +244,12 @@ fn spawn_mesh_tasks(
         };
 
         if chunk.count_solid() == 0 {
-            commands.entity(entity).remove::<NeedsRemesh>();
+            commands
+                .entity(entity)
+                .remove::<NeedsRemesh>()
+                .remove::<MeshTask>()
+                .remove::<Mesh3d>()
+                .remove::<MeshMaterial3d<StandardMaterial>>();
             continue;
         }
 
