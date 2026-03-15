@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use debug_ui::{DebugMetrics, DebugUiPlugin};
 use spectator::{SpectatorCamera, SpectatorPlugin};
 use voxel_engine::{
-    RenderingPlugin, VoxelEnginePlugin, VoxelWorld,
+    RenderingPlugin, VoxelEnginePlugin, VoxelWorld, WorldConfig,
     chunk::CHUNK_SIZE,
     generation::{WorldGenerator, island::IslandGenerator},
     rendering::{ChunkEntity, NeedsRemesh},
@@ -106,8 +106,7 @@ fn setup(
     // Kamera z atmosferą i mgłą
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(200., 80., 200.)
-            .looking_at(Vec3::new(64., 32., 64.), Vec3::Y),
+        Transform::from_xyz(200., 80., 200.).looking_at(Vec3::new(64., 32., 64.), Vec3::Y),
         Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
         DistanceFog {
             color: Color::srgba(0.5, 0.67, 0.85, 1.0),
@@ -131,11 +130,12 @@ fn setup(
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, 0.4, 0.)),
     ));
 
-    let generator = IslandGenerator::new(42);
+    let cfg = WorldConfig::new();
+    let generator = IslandGenerator::from_config(&cfg);
 
-    for cx in 0..10i32 {
-        for cz in 0..10i32 {
-            for cy in 0..6i32 {
+    for cx in 0..cfg.chunks.x {
+        for cz in 0..cfg.chunks.z {
+            for cy in 0..cfg.chunks.y {
                 let coord = IVec3::new(cx, cy, cz);
                 world.insert_chunk(coord, generator.generate_chunk(coord));
                 commands.spawn((ChunkEntity(coord), NeedsRemesh));

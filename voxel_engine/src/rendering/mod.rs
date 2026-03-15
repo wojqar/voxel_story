@@ -5,13 +5,16 @@ use crate::{
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
+use bevy::tasks::{AsyncComputeTaskPool, Task};
+use futures_lite::future;
 
 pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_chunk_material)
-            .add_systems(Update, remesh_dirty_chunks);
+            .add_systems(Update, spawn_mesh_tasks)
+            .add_systems(Update, apply_mesh_tasks.after(spawn_mesh_tasks));
     }
 }
 
@@ -31,6 +34,10 @@ pub struct NeedsRemesh;
 
 #[derive(Component)]
 pub struct ChunkEntity(pub IVec3);
+
+/// Trzyma in-flight task meshingu
+#[derive(Component)]
+pub struct MeshTask(Task<Mesh>);
 
 pub struct ChunkNeighbors<'a> {
     pub px: Option<&'a Chunk>,
@@ -90,7 +97,6 @@ pub fn build_chunk_mesh(chunk: &Chunk, neighbors: &ChunkNeighbors) -> Mesh {
                 let (fx, fy, fz) = (x as f32, y as f32, z as f32);
 
                 let faces: [([f32; 3], [f32; 3], [f32; 3], [f32; 3], [f32; 3]); 6] = [
-                    // +X (widok od +X, CCW)
                     (
                         [fx + 1., fy, fz + 1.],
                         [fx + 1., fy, fz],
@@ -98,7 +104,6 @@ pub fn build_chunk_mesh(chunk: &Chunk, neighbors: &ChunkNeighbors) -> Mesh {
                         [fx + 1., fy + 1., fz + 1.],
                         [1., 0., 0.],
                     ),
-                    // -X (widok od -X, CCW)
                     (
                         [fx, fy, fz],
                         [fx, fy, fz + 1.],
@@ -106,7 +111,6 @@ pub fn build_chunk_mesh(chunk: &Chunk, neighbors: &ChunkNeighbors) -> Mesh {
                         [fx, fy + 1., fz],
                         [-1., 0., 0.],
                     ),
-                    // +Y (widok od +Y, CCW)
                     (
                         [fx, fy + 1., fz],
                         [fx, fy + 1., fz + 1.],
@@ -114,7 +118,6 @@ pub fn build_chunk_mesh(chunk: &Chunk, neighbors: &ChunkNeighbors) -> Mesh {
                         [fx + 1., fy + 1., fz],
                         [0., 1., 0.],
                     ),
-                    // -Y (widok od -Y, CCW) — FIX
                     (
                         [fx, fy, fz],
                         [fx + 1., fy, fz],
@@ -122,7 +125,6 @@ pub fn build_chunk_mesh(chunk: &Chunk, neighbors: &ChunkNeighbors) -> Mesh {
                         [fx, fy, fz + 1.],
                         [0., -1., 0.],
                     ),
-                    // +Z (widok od +Z, CCW)
                     (
                         [fx, fy, fz + 1.],
                         [fx + 1., fy, fz + 1.],
@@ -130,7 +132,6 @@ pub fn build_chunk_mesh(chunk: &Chunk, neighbors: &ChunkNeighbors) -> Mesh {
                         [fx, fy + 1., fz + 1.],
                         [0., 0., 1.],
                     ),
-                    // -Z (widok od -Z, CCW)
                     (
                         [fx + 1., fy, fz],
                         [fx, fy, fz],
@@ -203,38 +204,78 @@ fn add_quad(
     normals.extend_from_slice(&[normal; 4]);
     uvs.extend_from_slice(&[[0., 0.], [1., 0.], [1., 1.], [0., 1.]]);
     colors.extend_from_slice(&[color; 4]);
-    // CCW: (v0,v1,v2), (v0,v2,v3)
     indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
-fn remesh_dirty_chunks(
+/// Pobiera chunki z NeedsRemesh, kopiuje dane i odpala task w tle
+fn spawn_mesh_tasks(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    material: Res<ChunkMaterial>,
     query: Query<(Entity, &ChunkEntity), With<NeedsRemesh>>,
     world: Res<VoxelWorld>,
-) {
+) { 
+    let pool = AsyncComputeTaskPool::get();
+    let mut budget = 16usize;
+
     for (entity, chunk_entity) in query.iter() {
+        
+        if budget == 0 {
+            break;
+        }
+
         let coord = chunk_entity.0;
         let Some(chunk) = world.get_chunk(coord) else {
             continue;
         };
 
-        let neighbors = ChunkNeighbors {
-            px: world.get_chunk(coord + IVec3::X),
-            nx: world.get_chunk(coord - IVec3::X),
-            py: world.get_chunk(coord + IVec3::Y),
-            ny: world.get_chunk(coord - IVec3::Y),
-            pz: world.get_chunk(coord + IVec3::Z),
-            nz: world.get_chunk(coord - IVec3::Z),
+        // Kopiujemy dane — task musi być 'static
+        let chunk = chunk.clone();
+        let px = world.get_chunk(coord + IVec3::X).cloned();
+        let nx = world.get_chunk(coord - IVec3::X).cloned();
+        let py = world.get_chunk(coord + IVec3::Y).cloned();
+        let ny = world.get_chunk(coord - IVec3::Y).cloned();
+        let pz = world.get_chunk(coord + IVec3::Z).cloned();
+        let nz = world.get_chunk(coord - IVec3::Z).cloned();
+
+        let task = pool.spawn(async move {
+            let neighbors = ChunkNeighbors {
+                px: px.as_ref(),
+                nx: nx.as_ref(),
+                py: py.as_ref(),
+                ny: ny.as_ref(),
+                pz: pz.as_ref(),
+                nz: nz.as_ref(),
+            };
+            build_chunk_mesh(&chunk, &neighbors)
+        });
+
+        commands
+            .entity(entity)
+            .insert(MeshTask(task))
+            .remove::<NeedsRemesh>();
+
+        budget -= 1;
+    }
+}
+
+/// Odbiera gotowe taski i wstawia mesh do sceny
+fn apply_mesh_tasks(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    material: Res<ChunkMaterial>,
+    mut query: Query<(Entity, &ChunkEntity, &mut MeshTask)>,
+) {
+    for (entity, chunk_entity, mut task) in query.iter_mut() {
+        let Some(mesh) = future::block_on(future::poll_once(&mut task.0)) else {
+            continue;
         };
 
-        let mesh = meshes.add(build_chunk_mesh(chunk, &neighbors));
+        let coord = chunk_entity.0;
+        let mesh = meshes.add(mesh);
         let transform = Transform::from_translation((coord * CHUNK_SIZE as i32).as_vec3());
 
         commands
             .entity(entity)
             .insert((Mesh3d(mesh), MeshMaterial3d(material.0.clone()), transform))
-            .remove::<NeedsRemesh>();
+            .remove::<MeshTask>();
     }
 }
