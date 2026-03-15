@@ -1,11 +1,11 @@
-// world.rs
-use crate::chunk::{CHUNK_SIZE, Chunk};
+use crate::chunk::Chunk;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
 #[derive(Resource, Default)]
 pub struct VoxelWorld {
-    chunks: HashMap<IVec3, Chunk>,
+    chunks:      HashMap<IVec3, Chunk>,
+    solid_count: usize,
 }
 
 impl VoxelWorld {
@@ -18,54 +18,40 @@ impl VoxelWorld {
     }
 
     pub fn insert_chunk(&mut self, coord: IVec3, chunk: Chunk) {
-        self.chunks.insert(coord, chunk);
+        let incoming = chunk.count_solid();
+        if let Some(old) = self.chunks.insert(coord, chunk) {
+            self.solid_count -= old.count_solid();
+        }
+        self.solid_count += incoming;
     }
 
-    /// Konwersja world position -> (chunk_coord, local xyz)
-    pub fn world_to_chunk(pos: IVec3) -> (IVec3, (usize, usize, usize)) {
-        let size = crate::chunk::CHUNK_SIZE as i32;
-        let chunk = IVec3::new(
-            pos.x.div_euclid(size),
-            pos.y.div_euclid(size),
-            pos.z.div_euclid(size),
-        );
-        let local = (
-            pos.x.rem_euclid(size) as usize,
-            pos.y.rem_euclid(size) as usize,
-            pos.z.rem_euclid(size) as usize,
-        );
-        (chunk, local)
-    }
     pub fn chunk_count(&self) -> usize {
         self.chunks.len()
     }
 
-    pub fn count_solid_voxels(&self) -> usize {
-        self.chunks
-            .values()
-            .flat_map(|c| {
-                (0..CHUNK_SIZE).flat_map(move |y| {
-                    (0..CHUNK_SIZE).flat_map(move |z| (0..CHUNK_SIZE).map(move |x| c.get(x, y, z)))
-                })
-            })
-            .filter(|v| !v.is_air())
-            .count()
+    pub fn solid_voxel_count(&self) -> usize {
+        self.solid_count
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::voxel::VoxelId;
 
     #[test]
-    fn test_world_to_chunk_conversion() {
-        let (chunk, local) = VoxelWorld::world_to_chunk(IVec3::new(17, 0, 0));
-        assert_eq!(chunk, IVec3::new(1, 0, 0));
-        assert_eq!(local, (1, 0, 0));
+    fn test_solid_count_incremental() {
+        let mut world = VoxelWorld::default();
+        let mut chunk = Chunk::empty();
+        chunk.set(0, 0, 0, VoxelId(1));
+        chunk.set(1, 0, 0, VoxelId(1));
+        world.insert_chunk(IVec3::ZERO, chunk);
+        assert_eq!(world.solid_voxel_count(), 2);
 
-        // test ujemnych współrzędnych — div_euclid musi działać poprawnie
-        let (chunk, local) = VoxelWorld::world_to_chunk(IVec3::new(-1, 0, 0));
-        assert_eq!(chunk, IVec3::new(-1, 0, 0));
-        assert_eq!(local, (15, 0, 0));
+        // nadpisanie chunka — licznik musi być poprawny
+        let mut chunk2 = Chunk::empty();
+        chunk2.set(0, 0, 0, VoxelId(1));
+        world.insert_chunk(IVec3::ZERO, chunk2);
+        assert_eq!(world.solid_voxel_count(), 1);
     }
 }

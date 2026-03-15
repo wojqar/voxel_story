@@ -1,8 +1,6 @@
-// generation/mod.rs
 use crate::chunk::Chunk;
 use bevy::math::IVec3;
 
-pub mod flat;
 pub mod heightmap;
 
 pub trait WorldGenerator: Send + Sync {
