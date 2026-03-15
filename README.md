@@ -13,7 +13,7 @@ Wczesny etap — fundament silnika.
 - Generacja i storage voxeli w chunkach 16×16×16
 - Greedy meshing z cullingiem między sąsiednimi chunkami
 - Generator archipelagu wysp oparty na 3D density function (Perlin noise)
-- Kamera spektatora (WSAD + mysz + scroll)
+- Kamera inspirowana Castle Story + Spectator
 - Debug UI z metrykami wydajności
 
 ## Architektura
