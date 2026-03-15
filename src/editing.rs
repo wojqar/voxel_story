@@ -5,6 +5,7 @@ use rts_camera::RtsActive;
 use voxel_engine::{
     VoxelId, VoxelWorld,
     chunk::CHUNK_SIZE,
+    coords::world_to_chunk,
     rendering::{ChunkEntity, NeedsRemesh},
 };
 
@@ -20,9 +21,7 @@ pub struct BlockTarget {
 pub struct SelectedVoxel(pub VoxelId);
 
 impl Default for SelectedVoxel {
-    fn default() -> Self {
-        Self(VoxelId::STONE)
-    }
+    fn default() -> Self { Self(VoxelId::STONE) }
 }
 
 #[derive(Component)]
@@ -63,7 +62,6 @@ fn spawn_highlight(
         unlit: true,
         ..default()
     });
-
     commands.spawn((
         BlockHighlight,
         Mesh3d(mesh),
@@ -74,37 +72,26 @@ fn spawn_highlight(
 }
 
 fn raycast_target(
-    rts_active: Query<(), With<RtsActive>>,
     camera_q: Query<(&Camera, &GlobalTransform), With<RtsActive>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     world: Res<VoxelWorld>,
     mut target: ResMut<BlockTarget>,
 ) {
-    if rts_active.is_empty() {
-        target.block = None;
-        return;
-    }
-
     let (Ok((camera, cam_transform)), Ok(window)) = (camera_q.single(), windows.single()) else {
         target.block = None;
         return;
     };
-
     let Some(cursor_pos) = window.cursor_position() else {
         target.block = None;
         return;
     };
-
     let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else {
         target.block = None;
         return;
     };
 
-    match voxel_raycast(&world, ray.origin, ray.direction.into(), MAX_REACH) {
-        Some((block, normal)) => {
-            target.block = Some(block);
-            target.normal = normal;
-        }
+    match voxel_raycast(&world, ray.origin, *ray.direction, MAX_REACH) {
+        Some((block, normal)) => { target.block = Some(block); target.normal = normal; }
         None => target.block = None,
     }
 }
@@ -113,15 +100,9 @@ fn update_highlight(
     target: Res<BlockTarget>,
     mut highlight_q: Query<(&mut Transform, &mut Visibility), With<BlockHighlight>>,
 ) {
-    let Ok((mut transform, mut visibility)) = highlight_q.single_mut() else {
-        return;
-    };
-
+    let Ok((mut transform, mut visibility)) = highlight_q.single_mut() else { return };
     match target.block {
-        Some(pos) => {
-            *visibility = Visibility::Visible;
-            transform.translation = pos.as_vec3() + Vec3::splat(0.5);
-        }
+        Some(pos) => { *visibility = Visibility::Visible; transform.translation = pos.as_vec3() + Vec3::splat(0.5); }
         None => *visibility = Visibility::Hidden,
     }
 }
@@ -136,12 +117,9 @@ fn handle_editing(
 ) {
     let Some(pos) = target.block else { return };
 
-    if mouse.just_pressed(MouseButton::Left) {
-        if world.set_voxel(pos, VoxelId::AIR) {
-            mark_remesh(pos, &chunk_q, &mut commands);
-        }
+    if mouse.just_pressed(MouseButton::Left) && world.set_voxel(pos, VoxelId::AIR) {
+        mark_remesh(pos, &chunk_q, &mut commands);
     }
-
     if mouse.just_pressed(MouseButton::Right) {
         let place_pos = pos + target.normal;
         if world.set_voxel(place_pos, selected.0) {
@@ -151,15 +129,9 @@ fn handle_editing(
 }
 
 fn select_voxel_type(keys: Res<ButtonInput<KeyCode>>, mut selected: ResMut<SelectedVoxel>) {
-    if keys.just_pressed(KeyCode::Digit1) {
-        selected.0 = VoxelId::STONE;
-    }
-    if keys.just_pressed(KeyCode::Digit2) {
-        selected.0 = VoxelId::DIRT;
-    }
-    if keys.just_pressed(KeyCode::Digit3) {
-        selected.0 = VoxelId::GRASS;
-    }
+    if keys.just_pressed(KeyCode::Digit1) { selected.0 = VoxelId::STONE; }
+    if keys.just_pressed(KeyCode::Digit2) { selected.0 = VoxelId::DIRT;  }
+    if keys.just_pressed(KeyCode::Digit3) { selected.0 = VoxelId::GRASS; }
 }
 
 fn update_editing_metrics(
@@ -169,52 +141,31 @@ fn update_editing_metrics(
 ) {
     let name = match selected.0 {
         VoxelId::STONE => "Stone",
-        VoxelId::DIRT => "Dirt",
+        VoxelId::DIRT  => "Dirt",
         VoxelId::GRASS => "Grass",
-        _ => "Unknown",
+        _              => "Unknown",
     };
     metrics.set("Edit", "Selected", name);
-    metrics.set(
-        "Edit",
-        "Target",
-        match target.block {
-            Some(p) => format!("{},{},{}", p.x, p.y, p.z),
-            None => "-".to_string(),
-        },
-    );
+    metrics.set("Edit", "Target", match target.block {
+        Some(p) => format!("{},{},{}", p.x, p.y, p.z),
+        None    => "-".to_string(),
+    });
 }
 
 fn mark_remesh(world_pos: IVec3, chunk_q: &Query<(Entity, &ChunkEntity)>, commands: &mut Commands) {
     let cs = CHUNK_SIZE as i32;
-    let chunk_coord = IVec3::new(
-        world_pos.x.div_euclid(cs),
-        world_pos.y.div_euclid(cs),
-        world_pos.z.div_euclid(cs),
-    );
-
-    let lx = world_pos.x.rem_euclid(cs);
-    let ly = world_pos.y.rem_euclid(cs);
-    let lz = world_pos.z.rem_euclid(cs);
+    let (chunk_coord, lx, ly, lz) = world_to_chunk(world_pos);
+    let lx = lx as i32;
+    let ly = ly as i32;
+    let lz = lz as i32;
 
     let mut dirty = vec![chunk_coord];
-    if lx == 0 {
-        dirty.push(chunk_coord - IVec3::X);
-    }
-    if lx == cs - 1 {
-        dirty.push(chunk_coord + IVec3::X);
-    }
-    if ly == 0 {
-        dirty.push(chunk_coord - IVec3::Y);
-    }
-    if ly == cs - 1 {
-        dirty.push(chunk_coord + IVec3::Y);
-    }
-    if lz == 0 {
-        dirty.push(chunk_coord - IVec3::Z);
-    }
-    if lz == cs - 1 {
-        dirty.push(chunk_coord + IVec3::Z);
-    }
+    if lx == 0      { dirty.push(chunk_coord - IVec3::X); }
+    if lx == cs - 1 { dirty.push(chunk_coord + IVec3::X); }
+    if ly == 0      { dirty.push(chunk_coord - IVec3::Y); }
+    if ly == cs - 1 { dirty.push(chunk_coord + IVec3::Y); }
+    if lz == 0      { dirty.push(chunk_coord - IVec3::Z); }
+    if lz == cs - 1 { dirty.push(chunk_coord + IVec3::Z); }
 
     for (entity, ce) in chunk_q.iter() {
         if dirty.contains(&ce.0) {
@@ -223,118 +174,46 @@ fn mark_remesh(world_pos: IVec3, chunk_q: &Query<(Entity, &ChunkEntity)>, comman
     }
 }
 
-fn voxel_raycast(
-    world: &VoxelWorld,
-    origin: Vec3,
-    dir: Vec3,
-    max_dist: f32,
-) -> Option<(IVec3, IVec3)> {
+fn voxel_raycast(world: &VoxelWorld, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<(IVec3, IVec3)> {
     let dir = dir.normalize();
-
-    let mut pos = IVec3::new(
-        origin.x.floor() as i32,
-        origin.y.floor() as i32,
-        origin.z.floor() as i32,
-    );
+    let mut pos = IVec3::new(origin.x.floor() as i32, origin.y.floor() as i32, origin.z.floor() as i32);
 
     let step = IVec3::new(
         if dir.x >= 0.0 { 1 } else { -1 },
         if dir.y >= 0.0 { 1 } else { -1 },
         if dir.z >= 0.0 { 1 } else { -1 },
     );
-
     let t_delta = Vec3::new(
-        if dir.x != 0.0 {
-            1.0 / dir.x.abs()
-        } else {
-            f32::MAX
-        },
-        if dir.y != 0.0 {
-            1.0 / dir.y.abs()
-        } else {
-            f32::MAX
-        },
-        if dir.z != 0.0 {
-            1.0 / dir.z.abs()
-        } else {
-            f32::MAX
-        },
+        if dir.x != 0.0 { 1.0 / dir.x.abs() } else { f32::MAX },
+        if dir.y != 0.0 { 1.0 / dir.y.abs() } else { f32::MAX },
+        if dir.z != 0.0 { 1.0 / dir.z.abs() } else { f32::MAX },
     );
-
     let mut t_max = Vec3::new(
-        if dir.x > 0.0 {
-            ((pos.x + 1) as f32 - origin.x) / dir.x
-        } else if dir.x < 0.0 {
-            (pos.x as f32 - origin.x) / dir.x
-        } else {
-            f32::MAX
-        },
-        if dir.y > 0.0 {
-            ((pos.y + 1) as f32 - origin.y) / dir.y
-        } else if dir.y < 0.0 {
-            (pos.y as f32 - origin.y) / dir.y
-        } else {
-            f32::MAX
-        },
-        if dir.z > 0.0 {
-            ((pos.z + 1) as f32 - origin.z) / dir.z
-        } else if dir.z < 0.0 {
-            (pos.z as f32 - origin.z) / dir.z
-        } else {
-            f32::MAX
-        },
+        if dir.x > 0.0 { ((pos.x + 1) as f32 - origin.x) / dir.x } else if dir.x < 0.0 { (pos.x as f32 - origin.x) / dir.x } else { f32::MAX },
+        if dir.y > 0.0 { ((pos.y + 1) as f32 - origin.y) / dir.y } else if dir.y < 0.0 { (pos.y as f32 - origin.y) / dir.y } else { f32::MAX },
+        if dir.z > 0.0 { ((pos.z + 1) as f32 - origin.z) / dir.z } else if dir.z < 0.0 { (pos.z as f32 - origin.z) / dir.z } else { f32::MAX },
     );
-
     let mut normal = IVec3::ZERO;
 
-    if is_solid(world, pos) {
-        return Some((pos, normal));
-    }
+    if is_solid(world, pos) { return Some((pos, normal)); }
 
     loop {
         if t_max.x < t_max.y && t_max.x < t_max.z {
-            if t_max.x > max_dist {
-                break;
-            }
-            pos.x += step.x;
-            normal = IVec3::new(-step.x, 0, 0);
-            t_max.x += t_delta.x;
+            if t_max.x > max_dist { break; }
+            pos.x += step.x; normal = IVec3::new(-step.x, 0, 0); t_max.x += t_delta.x;
         } else if t_max.y < t_max.z {
-            if t_max.y > max_dist {
-                break;
-            }
-            pos.y += step.y;
-            normal = IVec3::new(0, -step.y, 0);
-            t_max.y += t_delta.y;
+            if t_max.y > max_dist { break; }
+            pos.y += step.y; normal = IVec3::new(0, -step.y, 0); t_max.y += t_delta.y;
         } else {
-            if t_max.z > max_dist {
-                break;
-            }
-            pos.z += step.z;
-            normal = IVec3::new(0, 0, -step.z);
-            t_max.z += t_delta.z;
+            if t_max.z > max_dist { break; }
+            pos.z += step.z; normal = IVec3::new(0, 0, -step.z); t_max.z += t_delta.z;
         }
-
-        if is_solid(world, pos) {
-            return Some((pos, normal));
-        }
+        if is_solid(world, pos) { return Some((pos, normal)); }
     }
-
     None
 }
 
 fn is_solid(world: &VoxelWorld, pos: IVec3) -> bool {
-    let cs = CHUNK_SIZE as i32;
-    let chunk_coord = IVec3::new(
-        pos.x.div_euclid(cs),
-        pos.y.div_euclid(cs),
-        pos.z.div_euclid(cs),
-    );
-    let lx = pos.x.rem_euclid(cs) as usize;
-    let ly = pos.y.rem_euclid(cs) as usize;
-    let lz = pos.z.rem_euclid(cs) as usize;
-
-    world
-        .get_chunk(chunk_coord)
-        .map_or(false, |c| !c.get(lx, ly, lz).is_air())
+    let (chunk_coord, lx, ly, lz) = world_to_chunk(pos);
+    world.get_chunk(chunk_coord).map_or(false, |c| !c.get(lx, ly, lz).is_air())
 }

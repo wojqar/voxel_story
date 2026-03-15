@@ -1,2 +1,4 @@
 /target
 *.sh
+*.ps1
+*.txt

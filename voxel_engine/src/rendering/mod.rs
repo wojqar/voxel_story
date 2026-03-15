@@ -91,6 +91,7 @@ const FACES: [(usize, usize, usize, i32, [usize; 4]); 6] = [
     (2, 0, 1, 1, [0, 1, 2, 3]),  // +Z
     (2, 0, 1, -1, [1, 0, 3, 2]), // -Z
 ];
+const MAX_MESH_TASKS_PER_FRAME: usize = 16;
 
 pub fn build_chunk_mesh(chunk: &Chunk, neighbors: &ChunkNeighbors) -> Mesh {
     let mut positions: Vec<[f32; 3]> = Vec::new();
@@ -231,7 +232,7 @@ fn spawn_mesh_tasks(
     world: Res<VoxelWorld>,
 ) {
     let pool = AsyncComputeTaskPool::get();
-    let mut budget = 16usize;
+    let mut budget = MAX_MESH_TASKS_PER_FRAME;
 
     for (entity, chunk_entity) in query.iter() {
         if budget == 0 {

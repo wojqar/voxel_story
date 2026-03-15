@@ -2,12 +2,11 @@ use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use rts_camera::{RtsActive, RtsCamera};
 use spectator::{SpectatorActive, SpectatorCamera};
-use voxel_engine::{VoxelWorld, chunk::CHUNK_SIZE};
+use voxel_engine::{VoxelWorld, WorldConfig, coords::world_to_chunk, CHUNK_SIZE};
 
 const RING_INNER_RATIO: f32 = 0.75;
 const RING_OUTER_RADIUS: f32 = 0.8;
 const RING_Y_OFFSET: f32 = 0.08;
-const WORLD_HEIGHT: i32 = 128;
 
 #[derive(Component)]
 struct PivotMarker;
@@ -149,20 +148,13 @@ fn update_pivot_marker(
 }
 
 fn ground_at(world: &VoxelWorld, wx: f32, wz: f32) -> Option<f32> {
-    let x = wx as i32;
-    let z = wz as i32;
-    let cs = CHUNK_SIZE as i32;
+    let world_height = (WorldConfig::new().chunks.y * CHUNK_SIZE as i32) as i32;
+    let pos_xz = IVec3::new(wx as i32, 0, wz as i32);
 
-    for wy in (0..WORLD_HEIGHT).rev() {
-        let chunk_coord = IVec3::new(x.div_euclid(cs), wy.div_euclid(cs), z.div_euclid(cs));
-        let Some(chunk) = world.get_chunk(chunk_coord) else {
-            continue;
-        };
-
-        let lx = x.rem_euclid(cs) as usize;
-        let ly = wy.rem_euclid(cs) as usize;
-        let lz = z.rem_euclid(cs) as usize;
-
+    for wy in (0..world_height).rev() {
+        let pos = IVec3::new(pos_xz.x, wy, pos_xz.z);
+        let (chunk_coord, lx, ly, lz) = world_to_chunk(pos);
+        let Some(chunk) = world.get_chunk(chunk_coord) else { continue };
         if !chunk.get(lx, ly, lz).is_air() {
             return Some(wy as f32 + 1.0);
         }
