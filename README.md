@@ -1,18 +1,18 @@
 # voxel_story
 
-Gra voxelowa inspirowana [Castle Story](https://castlestory.net/) — budowanie, eksploracja i zarządzanie terenem w świecie złożonym z bloków.
+Gra voxelowa — klon Castle Story w Rust z użyciem Bevy.
 
 ## Cel projektu
 
-Celem jest zbudowanie od podstaw silnika voxelowego w Rust z użyciem Bevy, a następnie oparcie na nim rozgrywki w stylu Castle Story: dynamiczny teren, budowanie struktur, jednostki i surowce.
+Budowanie, eksploracja i zarządzanie terenem na archipelagu lewitujących wysp złożonych z bloków. Silnik voxelowy pisany od podstaw z naciskiem na wydajny rendering fixed-size świata, edycję terenu w czasie rzeczywistym i obliczenia pathfindingu dla jednostek.
 
 ## Stan projektu
 
 Wczesny etap — fundament silnika.
 
 - Generacja i storage voxeli w chunkach 16×16×16
-- Naive face culling z uwzględnieniem sąsiednich chunków
-- Heightmap generator terenu oparty na fBm (Perlin noise)
+- Greedy meshing z cullingiem między sąsiednimi chunkami
+- Generator archipelagu wysp oparty na 3D density function (Perlin noise)
 - Kamera spektatora (WSAD + mysz + scroll)
 - Debug UI z metrykami wydajności
 
@@ -26,6 +26,18 @@ Projekt podzielony na workspace crates:
 | `debug_ui` | Generyczny overlay z metrykami (niezależny od silnika) |
 | `spectator` | Kamera swobodna |
 | `voxel_story` | Główna aplikacja, łączy wszystkie crate'y |
+
+## Świat
+
+Fixed-size archipelag lewitujących wysp. Domyślna mapa: **30 × 8 × 30 chunków** (480 × 128 × 480 bloków). Rozmiar ustalany w `WorldConfig` przed kompilacją.
+
+## Roadmap
+
+1. Voxel editing — stawianie i usuwanie bloków z propagacją remesh
+2. World coordinate API — czyste przejście między world-space, chunk i local
+3. Raycast / picking — selekcja bloków kursorem
+4. Pathfinding — nawigacja jednostek po woksylowej siatce
+5. Jednostki i surowce — core rozgrywki
 
 ## Sterowanie
 
@@ -50,6 +62,6 @@ cargo run --release
 
 ## Inspiracje
 
-- [Castle Story](https://castlestory.net/) — główna inspiracja rozgrywki
+- [Castle Story](https://castlestory.net/) — główna inspiracja rozgrywki i stylu świata
 - [Minecraft](https://www.minecraft.net/) — model voxelowy i chunki
 - [0 FPS — Meshing in a Minecraft Game](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/) — teoria meshingu
