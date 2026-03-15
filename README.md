@@ -33,11 +33,9 @@ Fixed-size archipelag lewitujących wysp. Domyślna mapa: **30 × 8 × 30 chunk�
 
 ## Roadmap
 
-1. Voxel editing — stawianie i usuwanie bloków z propagacją remesh
-2. World coordinate API — czyste przejście między world-space, chunk i local
-3. Raycast / picking — selekcja bloków kursorem
-4. Pathfinding — nawigacja jednostek po woksylowej siatce
-5. Jednostki i surowce — core rozgrywki
+- World coordinate API — czyste przejście między world-space, chunk i local
+- Pathfinding — nawigacja jednostek po woksylowej siatce
+- Jednostki i surowce — core rozgrywki
 
 ## Sterowanie
 
@@ -64,7 +62,12 @@ cargo run --release
 ## Wymagania
 
 - Rust (edycja 2024)
-- GPU z obsługą Vulkan (testowane na NVIDIA GTX 1060 + Fedora Linux)
+- GPU z obsługą Vulkan
+
+## Wykonane testy
+
+- i5-8400, NVIDIA GTX 1060 + Fedora Linux (AVG 130FPS)
+- 8745hs, 780m, 24GB + Windows 11 (AVG 80FPS)
 
 ## Inspiracje
 
