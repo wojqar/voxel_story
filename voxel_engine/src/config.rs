@@ -12,7 +12,7 @@ pub struct WorldConfig {
 impl WorldConfig {
     pub fn new() -> Self {
         Self {
-            chunks: IVec3::new(50, 8, 50),
+            chunks: IVec3::new(30, 8, 30),
             island_radius: 88.0,
             island_thickness: 28.0,
             noise_scale: 40.0,

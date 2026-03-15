@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["voxel_engine", "debug_ui", "spectator"]
+members = ["voxel_engine", "debug_ui", "spectator", "rts_camera"]
 
 [dependencies]
 bevy = "0.18.1"
 voxel_engine = { path = "./voxel_engine" }
 debug_ui     = { path = "./debug_ui" }
 spectator    = { path = "./spectator" }
+rts_camera   = { path = "./rts_camera" }

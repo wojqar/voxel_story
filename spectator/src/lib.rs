@@ -1,2 +1,2 @@
 pub mod plugin;
-pub use plugin::{SpectatorCamera, SpectatorPlugin};
+pub use plugin::{SpectatorActive, SpectatorCamera, SpectatorPlugin};
