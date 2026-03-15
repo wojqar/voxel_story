@@ -104,8 +104,8 @@ fn setup(mut commands: Commands, mut world: ResMut<VoxelWorld>) {
 
     let generator = HeightmapGenerator::new(42);
 
-    for cx in 0..20i32 {
-        for cz in 0..20i32 {
+    for cx in 0..50i32 {
+        for cz in 0..50i32 {
             for cy in 0..3i32 {
                 let coord = IVec3::new(cx, cy, cz);
                 world.insert_chunk(coord, generator.generate_chunk(coord));
