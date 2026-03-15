@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 #[derive(Resource, Default)]
 pub struct VoxelWorld {
-    chunks:      HashMap<IVec3, Chunk>,
+    chunks: HashMap<IVec3, Chunk>,
     solid_count: usize,
 }
 
