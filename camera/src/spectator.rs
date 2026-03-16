@@ -81,3 +81,4 @@ fn scroll_speed(
         cam.speed = (cam.speed + scroll.delta.y * 2.0).clamp(1.0, 200.0);
     }
 }
+
