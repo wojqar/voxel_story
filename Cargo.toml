@@ -4,7 +4,7 @@ resolver = "2"
  
 [workspace.dependencies]
 bevy = "0.18.1"
+bevy_egui = "0.39.1"
 world_api = { path = "./world_api" }
 camera    = { path = "./camera" }
-voxel_story = { path = "./voxel_story" }
 ui        = { path = "./ui" }
