@@ -1,14 +1,8 @@
-[package]
-name = "voxel_story"
-version = "0.1.0"
-edition = "2024"
-
 [workspace]
-members = ["voxel_engine", "debug_ui", "spectator", "rts_camera"]
-
-[dependencies]
+members = ["world_api", "camera", "voxel_story"]
+resolver = "2"
+ 
+[workspace.dependencies]
 bevy = "0.18.1"
-voxel_engine = { path = "./voxel_engine" }
-debug_ui     = { path = "./debug_ui" }
-spectator    = { path = "./spectator" }
-rts_camera   = { path = "./rts_camera" }
+world_api = { path = "./world_api" }
+camera    = { path = "./camera" }
