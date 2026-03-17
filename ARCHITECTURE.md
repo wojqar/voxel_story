@@ -1,29 +1,28 @@
-# Architektura voxel_story
+# Architecture — voxel_story
 
-## Zasady — NIGDY nie łamać
+## Zasady niezmienne
 
-1. `voxel_core` nie importuje Bevy
-2. Zależności tylko w dół — wyższy crate zależy od niższego, nigdy odwrotnie
-3. Logika nie zależy od prezentacji — `voxel_interaction` nie importuje `voxel_render`
-4. Decyzja o ładowaniu chunków należy do `voxel_engine`, nie do kamery ani renderingu
-5. Kosztowne operacje nigdy nie blokują głównego wątku
-6. Warstwy komunikują się tylko przez eventy z `world_api` — nigdy przez bezpośrednie importy między sobą
-7. Kamera przelicza screen-space na world-space i wysyła gotowe dane — odbiorca nie wie nic o kamerze
+1. Zależności tylko w dół hierarchii — nigdy wstecz ani między równorzędnymi crate'ami
+2. Warstwy komunikują się wyłącznie przez eventy z `world_api`
+3. Kosztowne operacje zawsze async — główny wątek nie blokuje
+4. Logika nie zależy od prezentacji
 
 ---
 
-## Struktura crate'ów
+## Workspace
 
 ```
-world_api           wspólne typy eventów, zero logiki
-voxel_core          dane i logika świata, czysty Rust
-voxel_engine        Bevy ECS, zarządzanie światem
-voxel_render        meshowanie, GPU, frustum culling
-voxel_interaction   raycast, edycja bloków
-camera              RtsCamera, SpectatorCamera, przełączanie
-ui                  HUD, highlight, tooltip
-voxel_story         aplikacja, łączy wszystko
+voxel_story/
+├── world_api/        # Wspólne typy eventów i komponentów, zero logiki
+├── voxel_core/       # Dane i logika świata, czysty Rust
+├── voxel_engine/     # Bevy ECS — zarządzanie światem, generacja
+├── voxel_render/     # Meshing, GPU, frustum culling
+├── camera/           # RtsCamera, SpectatorCamera, cursor ray
+├── ui/               # Debug overlay, diagnostyki
+└── voxel_story/      # Binarny entry point, łączy wszystko
 ```
+
+Bevy: `0.18.1` | Rust edition: `2024` | Chunk size: `16³` voxeli | Region size: `4×4×4` chunki (`64³` voxeli)
 
 ---
 
@@ -31,294 +30,183 @@ voxel_story         aplikacja, łączy wszystko
 
 ```
 world_api
-    ├── voxel_core
-    │       └── voxel_engine
-    │               ├── voxel_render
-    │               └── voxel_interaction
-    ├── camera
-    ├── ui
-    └── voxel_story → wszystko
+  ├── voxel_core
+  │     └── voxel_engine
+  │           └── voxel_render
+  ├── camera
+  ├── ui
+  └── voxel_story → all
 ```
 
-Każdy crate zależy od `world_api`. `voxel_interaction` zależy od `voxel_engine` (potrzebuje VoxelWorld do raycasta). Poza tym — tylko w dół.
+`camera` i `ui` zależą wyłącznie od `world_api` i Bevy — zero cross-coupling z logiką silnika.
 
 ---
 
 ## world_api
 
-Cienka warstwa. Zero logiki, zero systemów Bevy. Same definicje typów.
+Warstwa kontraktów. Zero logiki, zero systemów Bevy. Kompiluje się jako pierwsza.
+
+**Events (`events.rs`):**
+
+| Event | Kierunek | Opis |
+|---|---|---|
+| `CursorRay { origin, direction }` | camera → * | Ray w world-space z pozycji kursora |
+| `ChunkModified(IVec3)` | voxel_engine → * | Zmiana danych chunka |
+| `DebugEntry { section, key, value }` | * → ui | Wpis do debug panelu |
+
+**Components (`components.rs`):**
 
 ```rust
-// events.rs
-
-// Kamera → voxel_interaction
-CursorRay { origin: Vec3, direction: Vec3 }
-
-// voxel_interaction → wszyscy
-BlockTargeted { pos: IVec3, normal: IVec3 }
-BlockTargetCleared
-
-// ui/camera → voxel_interaction
-BlockInteract { pos: IVec3, action: InteractAction }
-pub enum InteractAction { Remove, Place(VoxelId) }
-
-// voxel_engine → wszyscy
-ChunkLoaded(IVec3)
-ChunkUnloaded(IVec3)
-ChunkModified(IVec3)
-
-// camera → voxel_engine
-TerrainHeightRequest { pos: Vec2 }
-
-// voxel_engine → camera
-TerrainHeightResponse { height: f32 }
-
-// components.rs
-#[derive(Component)]
-ActiveCamera        — marker aktywnej kamery, dodawany przez switching system
-ChunkObserver { load_distance: u32, unload_distance: u32 }
-                    — kto ma ten komponent, wokół niego ładowane są chunki
-                    — może być na kamerze, jednostce, cokolwiek
+ActiveCamera     // Marker — kamera aktywna; używana do viewport_to_world
+ChunkObserver {
+    load_distance:   u32,
+    unload_distance: u32,
+}
 ```
 
 ---
 
 ## voxel_core
 
-Czysty Rust. Zero Bevy, zero GPU, zero async. Testowalny jednostkowo.
+Czysty Rust. Bez Bevy, GPU, async. Zero zewnętrznych zależności.
 
-```
-voxel.rs        VoxelId(u16), is_air(), is_solid(), is_transparent()
-                VoxelMaterial — kolor, twardość, właściwości
+**`VoxelId(u16)`** — ID voxela. `0` = powietrze. `is_air()` → `id == 0`.
 
-chunk.rs        Chunk<const SIZE: usize = 16>
-                voxels: [VoxelId; SIZE³]
-                get(x,y,z), set(x,y,z), is_empty(), count_solid()
+**`Chunk<const SIZE: usize = 16>`** — gęsty array voxeli `SIZE³`. Storage: `Vec<VoxelId>` z indeksowaniem `x + y*SIZE + z*SIZE²`. Operacje: `get(IVec3)`, `set(IVec3, VoxelId) → bool`, `is_empty()`, `count_solid()`.
 
-coords.rs       world_to_chunk(IVec3) → (chunk_coord, local_coord)
-                chunk_to_world(IVec3) → IVec3
-                local_to_index(IVec3) → usize
+**`coords.rs`** — konwersje współrzędnych bez alokacji:
+- `world_to_chunk::<SIZE>(IVec3) → (chunk_coord, local_coord)` — używa `div_euclid`/`rem_euclid` (poprawne dla ujemnych)
+- `chunk_to_world::<SIZE>(chunk, local) → IVec3`
+- `local_to_index::<SIZE>(IVec3) → usize`
 
-world.rs        WorldDimensions { x, y, z: u32 }
-                VoxelWorld
-                    chunks: Vec<Chunk>      płaska Vec, O(1) lookup
-                    dimensions: WorldDimensions
-                    solid_count: usize
+**`VoxelWorld<const SIZE: usize = 16>`** — płaska `Vec<Chunk>`, lookup O(1). Utrzymuje `solid_count`. API: `get_voxel`, `set_voxel`, `get_chunk`, `get_chunk_mut`, `contains`.
 
-                API:
-                    new(WorldDimensions) → Self
-                    get_voxel(IVec3) → VoxelId
-                    set_voxel(IVec3, VoxelId) → bool
-                    get_chunk(IVec3) → Option<&Chunk>
-                    get_chunk_mut(IVec3) → Option<&mut Chunk>
-                    contains(IVec3) → bool
-
-generation/     trait WorldGenerator
-                    generate_chunk(IVec3) → Chunk
-                IslandGenerator — 3D density function, Perlin noise
-```
+**`WorldGenerator` trait** — `generate_chunk(chunk_coord: IVec3) → Chunk`. Implementacje dostarczane zewnętrznie.
 
 ---
 
 ## voxel_engine
 
-Bevy ECS. Opakowuje `voxel_core`. Zero renderingu.
+Bevy ECS nad `voxel_core`. Uruchamia się headless (`MinimalPlugins`).
 
-```
-plugin.rs       VoxelEnginePlugin
-                    rejestruje VoxelWorld jako Resource
-                    rejestruje eventy z world_api
+**Resources:**
 
-resources.rs    WorldConfig — rozmiar świata, seed, parametry generacji
-
-observer.rs     słucha ChunkObserver (zdefiniowany w world_api)
-                    system śledzi pozycje obserwatorów
-                    ładuje/wyładowuje chunki
-                    emituje ChunkLoaded / ChunkUnloaded
-
-editing.rs      słucha BlockInteract
-                wywołuje world.set_voxel()
-                emituje ChunkModified
-
-generation.rs   async generacja chunków
-                priorytet — bliżej obserwatora = wyższy priorytet
-
-terrain.rs      słucha TerrainHeightRequest
-                raycast w dół przez VoxelWorld
-                odpowiada TerrainHeightResponse
-```
-
-Użycie:
 ```rust
-// Headless — zero GPU, zero okna
-app.add_plugins(VoxelEnginePlugin::default())
+WorldConfig {
+    dimensions: WorldDimensions, // Domyślnie 20×8×20 chunków
+    seed: u64,
+}
+VoxelWorldResource(DefaultWorld)
 ```
+
+**Startup sequence:**
+1. `init_voxel_world` — tworzy `VoxelWorldResource` z `WorldConfig::dimensions` (pusty świat)
 
 ---
 
 ## voxel_render
 
-Bevy rendering. Reaguje na eventy z `voxel_engine`. Samo dodaje `VoxelEnginePlugin`.
+Bevy rendering. Wciąga `VoxelEnginePlugin` jako dependency.
+
+**Region** — jednostka renderingu: `4×4×4` chunki = `64³` voxeli = jeden draw call. Domyślny świat 20×8×20 chunków → `5×2×5` = 50 regionów, maksymalnie 50 draw calls.
+
+**Pipeline:**
 
 ```
-plugin.rs       VoxelRenderPlugin
-                    dodaje VoxelEnginePlugin jako dependency
+seed_initial_regions (PostStartup)
+    → spawn Entity per region z NeedsRemesh
 
-region.rs       Region = 4×4×4 chunki = jeden draw call
-                30×8×30 chunki → ~112 regionów → ~112 draw calls max
+handle_chunk_events (Update)
+    → ChunkModified → insert NeedsRemesh na region
 
-meshing.rs      greedy meshing na poziomie regionu (64³ bloków)
-                async, priorytet blisko kamery
-                pakowany format wierzchołka (~8 bajtów zamiast 48)
+spawn_meshing_tasks (Update, after handle_chunk_events)
+    → coalesce NeedsRemesh → MeshingQueue
+    → max_spawns_per_frame = 2, max_inflight_tasks = 8
+    → snapshot voxels z VoxelWorld (main thread, bounded copy 64³)
+    → spawn async MeshTask do AsyncComputeTaskPool
 
-culling.rs      frustum culling per region z AABB
-
-pipeline:
-    ChunkLoaded   → oznacz region NeedsRemesh
-    NeedsRemesh   → spawn async MeshTask
-    MeshTask gotowy → upload do GPU
-    ChunkUnloaded → usuń mesh jeśli region pusty
-    ChunkModified → oznacz region NeedsRemesh
+apply_completed_meshes (Update, after spawn_meshing_tasks)
+    → poll tasks (non-blocking)
+    → pusty mesh → despawn entity
+    → niepusty → upload Mesh → insert Mesh3d + MeshMaterial3d
 ```
 
-Użycie:
-```rust
-// Samo wciąga VoxelEnginePlugin
-app.add_plugins(VoxelRenderPlugin::default())
-```
+**Greedy meshing** — 3-osiowy algorytm z 2D maską per slice. Dla każdej osi buduje maskę widocznych ścian (boundary solid/air), greedy merge prostokątów po U i V, winding order liczony geometrycznie. Output: `positions`, `normals`, `colors` (RGBA z palety), `indices` (U32).
 
----
+**VoxelPalette** — `Vec<[f32; 4]>` indeksowany przez `VoxelId.0`. Fallback: magenta. Domyślna paleta: air, dirt, grass, stone.
 
-## voxel_interaction
-
-Raycast i input gracza. Tłumaczy intencje gracza na eventy. Zależy od `voxel_engine` (potrzebuje VoxelWorld do raycasta).
-
-```
-raycast.rs      słucha CursorRay
-                DDA raycast przez VoxelWorld
-                emituje BlockTargeted / BlockTargetCleared
-
-input.rs        słucha input gracza (LPM, PPM)
-                czyta aktualny BlockTargeted
-                wysyła BlockInteract { pos, action }
-                — koniec. nie wie co się dzieje dalej.
-```
-
-`voxel_engine` słucha `BlockInteract` → wywołuje `set_voxel` → emituje `ChunkModified`.
+**MeshingQueue** — `VecDeque` + `HashSet` dla deduplikacji — region trafia do kolejki tylko raz mimo wielokrotnych eventów.
 
 ---
 
 ## camera
 
-Zero zależności poza `world_api` i Bevy. Izolowana.
+Zależności: tylko `world_api` i Bevy. Dwa tryby kamery na jednej encji.
 
-```
-spectator.rs    SpectatorCamera — swobodna, WSAD + mysz
-                SpectatorActive — marker komponent
-
-rts.rs          RtsCamera — pivot, zoom, pan, Q/E obrót
-                RtsActive — marker komponent
-                ChunkObserver (z world_api) — dodawany do encji kamery przez voxel_story
-
-                pivot Y:
-                    wysyła TerrainHeightRequest
-                    słucha TerrainHeightResponse → lerp pivot.y
-                    PageUp/PageDown → manual override
-
-switching.rs    Tab → toggle między trybami
-                dodaje/usuwa SpectatorActive, RtsActive, ActiveCamera
-
-cursor_ray.rs   słucha Bevy CursorMoved
-                przelicza screen-space → world-space ray
-                wysyła CursorRay (tylko gdy RtsActive)
-```
-
-Użycie:
+**Encja kamery** spawned w `setup.rs`:
 ```rust
-// Samo dodaje SpectatorPlugin i RtsCameraPlugin
-app.add_plugins(CameraPlugin::default())
+Camera3d, Transform,
+SpectatorCamera, SpectatorActive,
+RtsCamera,
+ActiveCamera,
+ChunkObserver::default(), // load: 8, unload: 12 chunków
 ```
+
+**SpectatorCamera** — swobodny lot WSAD + mysz (`AccumulatedMouseMotion`). Scroll zmienia prędkość lotu (1..200).
+
+**RtsCamera** — pivot + offset:
+- `pivot: Vec3`, `yaw: f32` (Q/E), `zoom: f32` (scroll, 15..250), pitch stały `45°`
+- `translation = pivot + Quat::from_rotation_y(yaw) * Vec3(0, zoom*sin45, zoom*cos45)`
+- PageUp/PageDown → ręczna zmiana `pivot.y`
+
+**SwitchingPlugin** — Tab toggleuje tryb. Spectator→RTS: unlock kursor, swap markerów. RTS→Spectator: lock kursor, synchronizuje `yaw/pitch` z `Transform.rotation`.
+
+**CursorRayPlugin** — `camera.viewport_to_world()` → wysyła `CursorRay` każdą klatkę gdy kursor w oknie.
 
 ---
 
 ## ui
 
-Zero zależności poza `world_api` i Bevy.
+Zależności: `world_api`, Bevy, `bevy_egui`.
 
-```
-highlight.rs    słucha BlockTargeted → podświetlenie bloku
-                słucha BlockTargetCleared → chowa highlight
+**DebugUiPlugin** — egui window `"Debug"` w lewym górnym rogu. `DebugEntry` eventy → `DebugMetrics` Resource (`BTreeMap<section, BTreeMap<key, value>>`) → panel.
 
-tooltip.rs      słucha BlockTargeted → typ bloku, współrzędne
-
-block_picker.rs wybór materiału (1/2/3)
-                Resource z aktualnym VoxelId
-                dołączany do BlockInteract
-```
+**DiagnosticsPlugin** — wysyła `DebugEntry` co 1s: FPS (smoothed), frame time ms.
 
 ---
 
-## Przepływ — edycja bloku
-
-```
-mysz się rusza
-    → cursor_ray.rs przelicza → wysyła CursorRay { origin, direction }
-
-voxel_interaction/raycast.rs słucha CursorRay
-    → DDA raycast → trafiony blok P
-    → wysyła BlockTargeted { pos: P, normal: N }
-
-ui słucha BlockTargeted → pokazuje highlight, tooltip
-
-gracz klika LPM
-    → voxel_interaction/input.rs wysyła BlockInteract { pos: P, action: Remove }
-    — koniec odpowiedzialności voxel_interaction
-
-voxel_engine/editing.rs słucha BlockInteract
-    → world.set_voxel(P, AIR)
-    → wysyła ChunkModified(chunk_coord)
-
-voxel_render słucha ChunkModified → NeedsRemesh → async remesh
-```
-
----
-
-## Przepływ — ładowanie chunków
-
-```
-kamera RTS ma ChunkObserver { load_distance: 8, unload_distance: 12 }
-
-voxel_engine/observer.rs co klatkę:
-    → sprawdza pozycje wszystkich ChunkObserver
-    → ładuje chunki w zasięgu  → emituje ChunkLoaded
-    → wyładowuje poza zasięgiem → emituje ChunkUnloaded
-
-voxel_render słucha:
-    ChunkLoaded   → NeedsRemesh na region
-    ChunkUnloaded → usuń mesh jeśli region pusty
-```
-
----
-
-## Użycie w main.rs
+## voxel_story (entry point)
 
 ```rust
 // Pełna gra
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(VoxelRenderPlugin::default())       // wciąga VoxelEnginePlugin
-        .add_plugins(VoxelInteractionPlugin::default())
-        .add_plugins(CameraPlugin::default())            // wciąga Spectator + RTS
-        .add_plugins(UiPlugin::default())
-        .run();
-}
+App::new()
+    .add_plugins(DefaultPlugins.set(WindowPlugin { present_mode: PresentMode::Immediate }))
+    .add_plugins(VoxelRenderPlugin::default()) // wciąga VoxelEnginePlugin
+    .add_plugins(CameraPlugin)
+    .add_plugins(UiPlugin)
+    .run();
 
 // Headless
-fn main() {
-    App::new()
-        .add_plugins(MinimalPlugins)
-        .add_plugins(VoxelEnginePlugin::default())
-        .run();
-}
+App::new()
+    .add_plugins(MinimalPlugins)
+    .add_plugins(VoxelEnginePlugin::default())
+    .run();
+```
+
+`PresentMode::Immediate` — brak V-Sync. Benchmarki: 130 FPS / GTX 1060, 80 FPS / 780M.
+
+---
+
+## Przepływ danych — inicjalizacja świata
+
+```
+Startup:
+    init_voxel_world         → VoxelWorldResource (pusty świat)
+
+PostStartup:
+    seed_initial_regions     → spawn Entity per region z NeedsRemesh
+
+Update (klatka 1+):
+    spawn_meshing_tasks      → max 2 taski/klatkę → AsyncComputeTaskPool
+    apply_completed_meshes   → poll → Mesh3d upload
 ```
