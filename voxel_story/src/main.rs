@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy::window::PresentMode;
 use camera::CameraPlugin;
 use ui::UiPlugin;
+use voxel_engine::VoxelEnginePlugin;
 
 fn main() {
     App::new()
@@ -12,6 +13,7 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(VoxelEnginePlugin)
         .add_plugins(CameraPlugin)
         .add_plugins(UiPlugin)
         .run();

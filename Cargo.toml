@@ -1,5 +1,5 @@
 [workspace]
-members = ["world_api", "camera", "voxel_story", "ui"]
+members = ["world_api", "camera", "voxel_story", "ui", "voxel_core", "voxel_engine"]
 resolver = "2"
  
 [workspace.dependencies]
@@ -8,3 +8,5 @@ bevy_egui = "0.39.1"
 world_api = { path = "./world_api" }
 camera    = { path = "./camera" }
 ui        = { path = "./ui" }
+voxel_core = { path = "./voxel_core" }
+voxel_engine = { path = "./voxel_engine" }

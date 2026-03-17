@@ -11,3 +11,4 @@ path = "src/main.rs"
 bevy   = { workspace = true }
 camera = { workspace = true }
 ui     = { workspace = true }
+voxel_engine = { workspace = true }
