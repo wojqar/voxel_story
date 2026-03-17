@@ -10,7 +10,7 @@ pub struct WorldConfig {
 impl Default for WorldConfig {
     fn default() -> Self {
         Self {
-            dimensions: WorldDimensions::new(8, 1, 8),
+            dimensions: WorldDimensions::new(20, 8, 20),
             seed: 0,
         }
     }
