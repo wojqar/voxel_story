@@ -1,0 +1,16 @@
+[package]
+name = "voxel_render"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+bevy = { workspace = true }
+world_api = { workspace = true }
+voxel_engine = { workspace = true }
+voxel_core = { workspace = true }
+futures-lite = "2"
+bevy_mesh = "0.18.1"
+

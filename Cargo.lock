@@ -5339,6 +5339,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "voxel_render"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_mesh",
+ "futures-lite",
+ "voxel_core",
+ "voxel_engine",
+ "world_api",
+]
+
+[[package]]
 name = "voxel_story"
 version = "0.1.0"
 dependencies = [
@@ -5346,6 +5358,7 @@ dependencies = [
  "camera",
  "ui",
  "voxel_engine",
+ "voxel_render",
 ]
 
 [[package]]
