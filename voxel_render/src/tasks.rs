@@ -124,10 +124,9 @@ pub fn apply_completed_meshes(
             let handle = meshes.add(mesh);
 
             // Keep region entities stable; only swap render payloads.
-            commands.entity(entity).insert((
-                Mesh3d(handle),
-                MeshMaterial3d(material.0.clone()),
-            ));
+            commands
+                .entity(entity)
+                .insert((Mesh3d(handle), MeshMaterial3d(material.0.clone())));
         }
 
         if needs_remesh_q.get(entity).is_ok() && !queue.pending_set.contains(&region) {

@@ -97,8 +97,10 @@ pub fn emit_engine_debug_entries(
     }
 
     let interval_secs = state.elapsed.max(f32::EPSILON) as f64;
-    let request_rate =
-        (terrain.requests_total.saturating_sub(state.previous_requests_total)) as f64 / interval_secs;
+    let request_rate = (terrain
+        .requests_total
+        .saturating_sub(state.previous_requests_total)) as f64
+        / interval_secs;
     state.previous_requests_total = terrain.requests_total;
     state.elapsed = 0.0;
 
@@ -113,7 +115,11 @@ pub fn emit_engine_debug_entries(
         "Voxel dims",
         format_voxel_dimensions(config.dimensions),
     ));
-    entries.write(DebugEntry::new("World", "Chunks built", world_gen.generated_chunks));
+    entries.write(DebugEntry::new(
+        "World",
+        "Chunks built",
+        world_gen.generated_chunks,
+    ));
     entries.write(DebugEntry::new(
         "World",
         "Generate total",
@@ -142,7 +148,11 @@ pub fn emit_engine_debug_entries(
     } else {
         0.0
     };
-    entries.write(DebugEntry::new("World", "Solid voxels", world_gen.solid_voxels));
+    entries.write(DebugEntry::new(
+        "World",
+        "Solid voxels",
+        world_gen.solid_voxels,
+    ));
     entries.write(DebugEntry::new(
         "World",
         "World fill",
@@ -153,7 +163,11 @@ pub fn emit_engine_debug_entries(
         entries.write(DebugEntry::new(
             "World",
             "Slowest chunk",
-            format!("{} ({:.2} ms)", format_ivec3(chunk), world_gen.slowest_chunk_ms),
+            format!(
+                "{} ({:.2} ms)",
+                format_ivec3(chunk),
+                world_gen.slowest_chunk_ms
+            ),
         ));
     }
 

@@ -31,7 +31,8 @@ pub struct VoxelWorld<const SIZE: usize = 16> {
 impl<const SIZE: usize> VoxelWorld<SIZE> {
     pub fn new(dimensions: WorldDimensions) -> Self {
         let chunks = vec![Chunk::<SIZE>::default(); dimensions.chunk_count()];
-        let column_tops = vec![None; (dimensions.x as usize) * (dimensions.z as usize) * SIZE * SIZE];
+        let column_tops =
+            vec![None; (dimensions.x as usize) * (dimensions.z as usize) * SIZE * SIZE];
         Self {
             chunks,
             column_tops,
@@ -137,7 +138,8 @@ impl<const SIZE: usize> VoxelWorld<SIZE> {
     }
 
     pub fn column_height(&self, x: i32, z: i32) -> Option<i32> {
-        self.column_index(x, z).and_then(|idx| self.column_tops[idx])
+        self.column_index(x, z)
+            .and_then(|idx| self.column_tops[idx])
     }
 
     pub fn snapshot_chunk_aligned_region_u16(

@@ -38,7 +38,10 @@ impl Plugin for VoxelRenderPlugin {
             .add_systems(Update, handle_chunk_events)
             .add_systems(Update, spawn_meshing_tasks.after(handle_chunk_events))
             .add_systems(Update, apply_completed_meshes.after(spawn_meshing_tasks))
-            .add_systems(Update, emit_meshing_debug_entries.after(apply_completed_meshes));
+            .add_systems(
+                Update,
+                emit_meshing_debug_entries.after(apply_completed_meshes),
+            );
     }
 }
 
@@ -60,13 +63,28 @@ fn handle_chunk_events(
     mut modified: MessageReader<ChunkModified>,
 ) {
     for ChunkLoaded(chunk) in loaded.read() {
-        ensure_region_entity(&mut commands, &mut region_map, &mut queue, chunk_to_region(*chunk));
+        ensure_region_entity(
+            &mut commands,
+            &mut region_map,
+            &mut queue,
+            chunk_to_region(*chunk),
+        );
     }
     for ChunkUnloaded(chunk) in unloaded.read() {
-        ensure_region_entity(&mut commands, &mut region_map, &mut queue, chunk_to_region(*chunk));
+        ensure_region_entity(
+            &mut commands,
+            &mut region_map,
+            &mut queue,
+            chunk_to_region(*chunk),
+        );
     }
     for ChunkModified(chunk) in modified.read() {
-        ensure_region_entity(&mut commands, &mut region_map, &mut queue, chunk_to_region(*chunk));
+        ensure_region_entity(
+            &mut commands,
+            &mut region_map,
+            &mut queue,
+            chunk_to_region(*chunk),
+        );
     }
 }
 

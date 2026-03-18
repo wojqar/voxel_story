@@ -125,8 +125,10 @@ pub fn emit_meshing_debug_entries(
     }
 
     let interval_secs = state.elapsed.max(f32::EPSILON) as f64;
-    let spawn_rate =
-        (stats.spawned_tasks_total.saturating_sub(state.previous_spawned_total)) as f64 / interval_secs;
+    let spawn_rate = (stats
+        .spawned_tasks_total
+        .saturating_sub(state.previous_spawned_total)) as f64
+        / interval_secs;
     let complete_rate = (stats
         .completed_tasks_total
         .saturating_sub(state.previous_completed_total)) as f64
@@ -143,7 +145,11 @@ pub fn emit_meshing_debug_entries(
             config.max_spawns_per_frame, config.max_inflight_tasks
         ),
     ));
-    entries.write(DebugEntry::new("Meshing", "Live regions", region_map.0.len()));
+    entries.write(DebugEntry::new(
+        "Meshing",
+        "Live regions",
+        region_map.0.len(),
+    ));
     entries.write(DebugEntry::new(
         "Meshing",
         "Queue depth",
@@ -172,7 +178,10 @@ pub fn emit_meshing_debug_entries(
     entries.write(DebugEntry::new(
         "Meshing",
         "Complete rate",
-        format!("{complete_rate:.1}/s | total {}", stats.completed_tasks_total),
+        format!(
+            "{complete_rate:.1}/s | total {}",
+            stats.completed_tasks_total
+        ),
     ));
     entries.write(DebugEntry::new(
         "Meshing",
@@ -227,7 +236,11 @@ pub fn emit_meshing_debug_entries(
         entries.write(DebugEntry::new(
             "Meshing",
             "Slowest build",
-            format!("{} ({:.3} ms)", format_region(region), stats.slowest_build_ms),
+            format!(
+                "{} ({:.3} ms)",
+                format_region(region),
+                stats.slowest_build_ms
+            ),
         ));
     }
 

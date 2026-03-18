@@ -14,7 +14,11 @@ impl<const SIZE: usize> Chunk<SIZE> {
     }
 
     pub fn new_filled(voxel: VoxelId) -> Self {
-        let solid_count = if voxel.is_air() { 0 } else { SIZE * SIZE * SIZE };
+        let solid_count = if voxel.is_air() {
+            0
+        } else {
+            SIZE * SIZE * SIZE
+        };
         let column_top = if voxel.is_air() {
             None
         } else {
