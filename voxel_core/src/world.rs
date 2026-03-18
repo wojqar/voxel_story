@@ -23,6 +23,7 @@ impl WorldDimensions {
 #[derive(Debug, Clone)]
 pub struct VoxelWorld<const SIZE: usize = 16> {
     chunks: Vec<Chunk<SIZE>>,
+    column_tops: Vec<Option<i32>>,
     pub dimensions: WorldDimensions,
     pub solid_count: usize,
 }
@@ -30,8 +31,10 @@ pub struct VoxelWorld<const SIZE: usize = 16> {
 impl<const SIZE: usize> VoxelWorld<SIZE> {
     pub fn new(dimensions: WorldDimensions) -> Self {
         let chunks = vec![Chunk::<SIZE>::default(); dimensions.chunk_count()];
+        let column_tops = vec![None; (dimensions.x as usize) * (dimensions.z as usize) * SIZE * SIZE];
         Self {
             chunks,
+            column_tops,
             dimensions,
             solid_count: 0,
         }
@@ -95,14 +98,13 @@ impl<const SIZE: usize> VoxelWorld<SIZE> {
         }
 
         let (chunk_coord, local) = world_to_chunk::<SIZE>(world_voxel);
+        let prev = self
+            .get_chunk(chunk_coord)
+            .map(|chunk| chunk.get(local))
+            .unwrap_or(VoxelId::AIR);
         let Some(chunk) = self.get_chunk_mut(chunk_coord) else {
             return false;
         };
-
-        let prev = chunk.get(local);
-        if prev == voxel {
-            return false;
-        }
 
         let changed = chunk.set(local, voxel);
         if changed {
@@ -113,6 +115,7 @@ impl<const SIZE: usize> VoxelWorld<SIZE> {
                 (true, false) => self.solid_count = self.solid_count.saturating_sub(1),
                 _ => {}
             }
+            self.refresh_column(world_voxel.x, world_voxel.z);
         }
         changed
     }
@@ -129,27 +132,75 @@ impl<const SIZE: usize> VoxelWorld<SIZE> {
             .solid_count
             .saturating_sub(prev_solid)
             .saturating_add(new_solid);
+        self.refresh_chunk_columns(chunk_coord);
         true
     }
 
     pub fn column_height(&self, x: i32, z: i32) -> Option<i32> {
-        let max_y = (self.dimensions.y as i32) * (SIZE as i32);
-        if x < 0
-            || z < 0
-            || x >= (self.dimensions.x as i32) * (SIZE as i32)
-            || z >= (self.dimensions.z as i32) * (SIZE as i32)
-        {
-            return None;
-        }
+        self.column_index(x, z).and_then(|idx| self.column_tops[idx])
+    }
 
-        for y in (0..max_y).rev() {
-            let voxel = self.get_voxel(IVec3::new(x, y, z));
-            if !voxel.is_air() {
-                return Some(y);
+    pub fn snapshot_chunk_aligned_region_u16(
+        &self,
+        origin_chunk: IVec3,
+        chunk_dimensions: IVec3,
+    ) -> (Vec<u16>, usize) {
+        debug_assert!(chunk_dimensions.x >= 0);
+        debug_assert!(chunk_dimensions.y >= 0);
+        debug_assert!(chunk_dimensions.z >= 0);
+
+        let voxel_dims = IVec3::new(
+            chunk_dimensions.x * SIZE as i32,
+            chunk_dimensions.y * SIZE as i32,
+            chunk_dimensions.z * SIZE as i32,
+        );
+        let nx = voxel_dims.x as usize;
+        let ny = voxel_dims.y as usize;
+        let nz = voxel_dims.z as usize;
+        let mut voxels = vec![0u16; nx * ny * nz];
+        let mut solid_voxels = 0usize;
+
+        for chunk_z in 0..chunk_dimensions.z {
+            for chunk_y in 0..chunk_dimensions.y {
+                for chunk_x in 0..chunk_dimensions.x {
+                    let chunk_coord = IVec3::new(
+                        origin_chunk.x + chunk_x,
+                        origin_chunk.y + chunk_y,
+                        origin_chunk.z + chunk_z,
+                    );
+                    let Some(chunk) = self.get_chunk(chunk_coord) else {
+                        continue;
+                    };
+
+                    solid_voxels += chunk.count_solid();
+
+                    let dst_chunk_x = chunk_x as usize * SIZE;
+                    let dst_chunk_y = chunk_y as usize * SIZE;
+                    let dst_chunk_z = chunk_z as usize * SIZE;
+                    let src = chunk.voxels();
+
+                    for local_z in 0..SIZE {
+                        let dst_z = dst_chunk_z + local_z;
+                        let src_z = local_z * SIZE * SIZE;
+
+                        for local_y in 0..SIZE {
+                            let dst_y = dst_chunk_y + local_y;
+                            let dst_index = dst_chunk_x + dst_y * nx + dst_z * nx * ny;
+                            let src_index = src_z + local_y * SIZE;
+
+                            for (dst, voxel) in voxels[dst_index..dst_index + SIZE]
+                                .iter_mut()
+                                .zip(&src[src_index..src_index + SIZE])
+                            {
+                                *dst = voxel.0;
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        None
+        (voxels, solid_voxels)
     }
 
     #[inline]
@@ -168,5 +219,100 @@ impl<const SIZE: usize> VoxelWorld<SIZE> {
                 + (y as usize) * (self.dimensions.x as usize)
                 + (z as usize) * (self.dimensions.x as usize) * (self.dimensions.y as usize),
         )
+    }
+
+    #[inline]
+    fn column_index(&self, x: i32, z: i32) -> Option<usize> {
+        if x < 0
+            || z < 0
+            || x >= (self.dimensions.x as i32) * (SIZE as i32)
+            || z >= (self.dimensions.z as i32) * (SIZE as i32)
+        {
+            return None;
+        }
+
+        Some((x as usize) + (z as usize) * (self.dimensions.x as usize) * SIZE)
+    }
+
+    fn refresh_chunk_columns(&mut self, chunk_coord: IVec3) {
+        let origin_x = chunk_coord.x * SIZE as i32;
+        let origin_z = chunk_coord.z * SIZE as i32;
+
+        for local_z in 0..SIZE as i32 {
+            for local_x in 0..SIZE as i32 {
+                self.refresh_column(origin_x + local_x, origin_z + local_z);
+            }
+        }
+    }
+
+    fn refresh_column(&mut self, x: i32, z: i32) {
+        let Some(index) = self.column_index(x, z) else {
+            return;
+        };
+
+        let chunk_x = x.div_euclid(SIZE as i32);
+        let chunk_z = z.div_euclid(SIZE as i32);
+        let local_x = x.rem_euclid(SIZE as i32) as usize;
+        let local_z = z.rem_euclid(SIZE as i32) as usize;
+
+        let mut top = None;
+        for chunk_y in (0..self.dimensions.y as i32).rev() {
+            let Some(chunk) = self.get_chunk(IVec3::new(chunk_x, chunk_y, chunk_z)) else {
+                continue;
+            };
+
+            if let Some(local_y) = chunk.column_height(local_x, local_z) {
+                top = Some(chunk_y * SIZE as i32 + local_y as i32);
+                break;
+            }
+        }
+
+        self.column_tops[index] = top;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{VoxelWorld, WorldDimensions};
+    use crate::{Chunk, IVec3, VoxelId};
+
+    #[test]
+    fn world_column_height_updates_in_o_one_queries() {
+        let mut world = VoxelWorld::<4>::new(WorldDimensions::new(1, 2, 1));
+
+        assert_eq!(world.column_height(0, 0), None);
+
+        assert!(world.set_voxel(IVec3::new(0, 1, 0), VoxelId::DIRT));
+        assert_eq!(world.column_height(0, 0), Some(1));
+
+        assert!(world.set_voxel(IVec3::new(0, 6, 0), VoxelId::STONE));
+        assert_eq!(world.column_height(0, 0), Some(6));
+
+        assert!(world.set_voxel(IVec3::new(0, 6, 0), VoxelId::AIR));
+        assert_eq!(world.column_height(0, 0), Some(1));
+    }
+
+    #[test]
+    fn region_snapshot_copies_chunk_aligned_data() {
+        let mut world = VoxelWorld::<2>::new(WorldDimensions::new(2, 1, 1));
+
+        let mut left = Chunk::<2>::default();
+        assert!(left.set(IVec3::new(0, 0, 0), VoxelId::DIRT));
+        assert!(left.set(IVec3::new(1, 1, 1), VoxelId::GRASS));
+
+        let mut right = Chunk::<2>::default();
+        assert!(right.set(IVec3::new(0, 1, 0), VoxelId::STONE));
+
+        assert!(world.replace_chunk(IVec3::new(0, 0, 0), left));
+        assert!(world.replace_chunk(IVec3::new(1, 0, 0), right));
+
+        let (voxels, solid_voxels) =
+            world.snapshot_chunk_aligned_region_u16(IVec3::ZERO, IVec3::new(2, 1, 1));
+
+        assert_eq!(solid_voxels, 3);
+        assert_eq!(voxels.len(), 16);
+        assert_eq!(voxels[0], VoxelId::DIRT.0);
+        assert_eq!(voxels[6], VoxelId::STONE.0);
+        assert_eq!(voxels[13], VoxelId::GRASS.0);
     }
 }

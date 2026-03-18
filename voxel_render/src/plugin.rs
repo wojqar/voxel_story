@@ -1,7 +1,7 @@
 use bevy::app::PostStartup;
 use bevy::prelude::*;
 
-use crate::components::{NeedsRemesh, RegionMesh};
+use crate::components::NeedsRemesh;
 use crate::debug::{MeshingDebugStats, emit_meshing_debug_entries};
 use crate::region::{REGION_SIZE_CHUNKS, RegionCoord};
 use crate::region::{chunk_to_region, region_origin_world_voxel};
@@ -54,24 +54,26 @@ fn init_material(mut commands: Commands, mut materials: ResMut<Assets<StandardMa
 fn handle_chunk_events(
     mut commands: Commands,
     mut region_map: ResMut<RegionMap>,
+    mut queue: ResMut<MeshingQueue>,
     mut loaded: MessageReader<ChunkLoaded>,
     mut unloaded: MessageReader<ChunkUnloaded>,
     mut modified: MessageReader<ChunkModified>,
 ) {
     for ChunkLoaded(chunk) in loaded.read() {
-        ensure_region_entity(&mut commands, &mut region_map, chunk_to_region(*chunk));
+        ensure_region_entity(&mut commands, &mut region_map, &mut queue, chunk_to_region(*chunk));
     }
     for ChunkUnloaded(chunk) in unloaded.read() {
-        ensure_region_entity(&mut commands, &mut region_map, chunk_to_region(*chunk));
+        ensure_region_entity(&mut commands, &mut region_map, &mut queue, chunk_to_region(*chunk));
     }
     for ChunkModified(chunk) in modified.read() {
-        ensure_region_entity(&mut commands, &mut region_map, chunk_to_region(*chunk));
+        ensure_region_entity(&mut commands, &mut region_map, &mut queue, chunk_to_region(*chunk));
     }
 }
 
 fn seed_initial_regions(
     mut commands: Commands,
     mut region_map: ResMut<RegionMap>,
+    mut queue: ResMut<MeshingQueue>,
     world: Res<VoxelWorldResource>,
 ) {
     let dims = world.0.dimensions;
@@ -83,7 +85,12 @@ fn seed_initial_regions(
     for z in 0..rz {
         for y in 0..ry {
             for x in 0..rx {
-                ensure_region_entity(&mut commands, &mut region_map, RegionCoord::new(x, y, z));
+                ensure_region_entity(
+                    &mut commands,
+                    &mut region_map,
+                    &mut queue,
+                    RegionCoord::new(x, y, z),
+                );
             }
         }
     }
@@ -92,8 +99,11 @@ fn seed_initial_regions(
 fn ensure_region_entity(
     commands: &mut Commands,
     region_map: &mut RegionMap,
+    queue: &mut MeshingQueue,
     region: crate::region::RegionCoord,
 ) {
+    queue.enqueue(region);
+
     if let Some(&entity) = region_map.0.get(&region) {
         commands.entity(entity).insert(NeedsRemesh);
         return;
@@ -102,7 +112,6 @@ fn ensure_region_entity(
     let origin = region_origin_world_voxel(region).as_vec3();
     let entity = commands
         .spawn((
-            RegionMesh { coord: region },
             NeedsRemesh,
             Transform::from_translation(origin),
             GlobalTransform::default(),

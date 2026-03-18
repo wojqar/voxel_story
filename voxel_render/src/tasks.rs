@@ -6,19 +6,15 @@ use bevy_mesh::VertexAttributeValues;
 use futures_lite::future;
 use std::time::Instant;
 
-use crate::components::{NeedsRemesh, RegionMesh};
+use crate::components::NeedsRemesh;
 use crate::debug::MeshingDebugStats;
 use crate::meshing::{MeshData, build_region_mesh};
-use crate::region::{REGION_SIZE_VOXELS, RegionCoord, region_origin_world_voxel};
+use crate::region::{REGION_SIZE_CHUNKS, RegionCoord};
 use crate::resources::{
     InflightMeshTask, InflightTasks, MeshTaskOutput, MeshingQueue, RegionMap, RegionMaterial,
     VoxelPalette, VoxelRenderConfig,
 };
 use voxel_engine::VoxelWorldResource;
-
-fn bevy_to_core(v: IVec3) -> voxel_core::IVec3 {
-    voxel_core::IVec3::new(v.x, v.y, v.z)
-}
 
 pub fn spawn_meshing_tasks(
     world: Res<VoxelWorldResource>,
@@ -27,15 +23,9 @@ pub fn spawn_meshing_tasks(
     mut queue: ResMut<MeshingQueue>,
     mut inflight: ResMut<InflightTasks>,
     mut debug_stats: ResMut<MeshingDebugStats>,
-    mut query: Query<(Entity, &RegionMesh), With<NeedsRemesh>>,
 ) {
     if inflight.tasks.len() >= config.max_inflight_tasks {
         return;
-    }
-
-    // Ensure any "NeedsRemesh" regions end up queued (coalesced via pending_set).
-    for (_, rm) in query.iter_mut() {
-        queue.enqueue(rm.coord);
     }
 
     let pool = AsyncComputeTaskPool::get();
@@ -51,24 +41,17 @@ pub fn spawn_meshing_tasks(
             continue;
         }
 
-        // Snapshot region voxel ids on main thread (bounded copy).
-        let origin = region_origin_world_voxel(region);
-        let n = REGION_SIZE_VOXELS;
         let snapshot_started = Instant::now();
-        let mut solid_voxels = 0usize;
-        let mut voxels = vec![0u16; (n * n * n) as usize];
-        for z in 0..n {
-            for y in 0..n {
-                for x in 0..n {
-                    let p = IVec3::new(origin.x + x, origin.y + y, origin.z + z);
-                    let v = world.0.get_voxel(bevy_to_core(p)).0;
-                    if v != 0 {
-                        solid_voxels += 1;
-                    }
-                    voxels[(x + y * n + z * n * n) as usize] = v;
-                }
-            }
-        }
+        let origin_chunk = voxel_core::IVec3::new(
+            region.x * REGION_SIZE_CHUNKS,
+            region.y * REGION_SIZE_CHUNKS,
+            region.z * REGION_SIZE_CHUNKS,
+        );
+        let chunk_dims =
+            voxel_core::IVec3::new(REGION_SIZE_CHUNKS, REGION_SIZE_CHUNKS, REGION_SIZE_CHUNKS);
+        let (voxels, solid_voxels) = world
+            .0
+            .snapshot_chunk_aligned_region_u16(origin_chunk, chunk_dims);
         debug_stats.record_snapshot(snapshot_started.elapsed(), solid_voxels);
 
         let colors = palette.colors.clone();
@@ -101,12 +84,12 @@ pub fn spawn_meshing_tasks(
 pub fn apply_completed_meshes(
     mut commands: Commands,
     material: Res<RegionMaterial>,
-    mut region_map: ResMut<RegionMap>,
+    region_map: Res<RegionMap>,
+    queue: Res<MeshingQueue>,
     mut inflight: ResMut<InflightTasks>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut debug_stats: ResMut<MeshingDebugStats>,
     needs_remesh_q: Query<Entity, With<NeedsRemesh>>,
-    transform_q: Query<&Transform>,
 ) {
     let apply_started = Instant::now();
     let mut finished: Vec<(RegionCoord, MeshTaskOutput, std::time::Duration)> = Vec::new();
@@ -132,24 +115,22 @@ pub fn apply_completed_meshes(
 
         if data.is_empty() {
             debug_stats.record_empty_mesh();
-            commands.entity(entity).despawn();
-            region_map.0.remove(&region);
-            continue;
+            commands
+                .entity(entity)
+                .remove::<(Mesh3d, MeshMaterial3d<StandardMaterial>)>();
+        } else {
+            debug_stats.record_mesh_output(&data);
+            let mesh = mesh_from_data(&data);
+            let handle = meshes.add(mesh);
+
+            // Keep region entities stable; only swap render payloads.
+            commands.entity(entity).insert((
+                Mesh3d(handle),
+                MeshMaterial3d(material.0.clone()),
+            ));
         }
 
-        debug_stats.record_mesh_output(&data);
-        let mesh = mesh_from_data(&data);
-        let handle = meshes.add(mesh);
-
-        let transform = transform_q.get(entity).copied().unwrap_or_default();
-        // Bevy 0.18: render via Mesh3d + MeshMaterial3d.
-        commands.entity(entity).insert((
-            Mesh3d(handle),
-            MeshMaterial3d(material.0.clone()),
-            transform,
-        ));
-
-        if needs_remesh_q.get(entity).is_ok() {
+        if needs_remesh_q.get(entity).is_ok() && !queue.pending_set.contains(&region) {
             commands.entity(entity).remove::<NeedsRemesh>();
         }
     }
