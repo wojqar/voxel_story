@@ -49,4 +49,3 @@ pub fn region_key(region: RegionCoord) -> i64 {
         | (((region.y as i64) & 0x1FFFFF) << 21)
         | (((region.z as i64) & 0x1FFFFF) << 42)
 }
-

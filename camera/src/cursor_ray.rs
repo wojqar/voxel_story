@@ -16,10 +16,18 @@ fn emit_cursor_ray(
     window_q: Query<&Window, With<PrimaryWindow>>,
     mut writer: MessageWriter<CursorRay>,
 ) {
-    let Ok((camera, cam_transform)) = camera_q.single() else { return };
-    let Ok(window) = window_q.single() else { return };
-    let Some(cursor_pos) = window.cursor_position() else { return };
-    let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else { return };
+    let Ok((camera, cam_transform)) = camera_q.single() else {
+        return;
+    };
+    let Ok(window) = window_q.single() else {
+        return;
+    };
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+    let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else {
+        return;
+    };
 
     writer.write(CursorRay {
         origin: ray.origin,

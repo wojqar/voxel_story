@@ -9,4 +9,3 @@ pub struct RegionMesh {
 
 #[derive(Component, Debug, Default)]
 pub struct NeedsRemesh;
-

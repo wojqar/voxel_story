@@ -1,5 +1,5 @@
-use voxel_core::{DefaultWorld, WorldDimensions};
 use bevy::prelude::Resource;
+use voxel_core::{DefaultWorld, WorldDimensions};
 
 #[derive(Debug, Clone, Resource)]
 pub struct WorldConfig {
@@ -18,4 +18,3 @@ impl Default for WorldConfig {
 
 #[derive(Debug, Resource)]
 pub struct VoxelWorldResource(pub DefaultWorld);
-

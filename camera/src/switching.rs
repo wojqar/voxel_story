@@ -29,12 +29,17 @@ fn switch(
     mut spectator_q: Query<(Entity, &mut SpectatorCamera, &Transform)>,
     rts_q: Query<Entity, With<RtsCamera>>,
 ) {
-    if !keys.just_pressed(KeyCode::Tab) { return; }
+    if !keys.just_pressed(KeyCode::Tab) {
+        return;
+    }
 
     match *mode {
         CameraMode::Spectator => {
             for (e, _, _) in spectator_q.iter() {
-                commands.entity(e).remove::<SpectatorActive>().remove::<ActiveCamera>();
+                commands
+                    .entity(e)
+                    .remove::<SpectatorActive>()
+                    .remove::<ActiveCamera>();
             }
             for e in rts_q.iter() {
                 commands.entity(e).insert(RtsActive).insert(ActiveCamera);
@@ -45,13 +50,19 @@ fn switch(
         }
         CameraMode::Rts => {
             for e in rts_q.iter() {
-                commands.entity(e).remove::<RtsActive>().remove::<ActiveCamera>();
+                commands
+                    .entity(e)
+                    .remove::<RtsActive>()
+                    .remove::<ActiveCamera>();
             }
             for (e, mut spec, transform) in spectator_q.iter_mut() {
                 let (yaw, pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
-                spec.yaw   = yaw.to_degrees();
+                spec.yaw = yaw.to_degrees();
                 spec.pitch = pitch.to_degrees();
-                commands.entity(e).insert(SpectatorActive).insert(ActiveCamera);
+                commands
+                    .entity(e)
+                    .insert(SpectatorActive)
+                    .insert(ActiveCamera);
             }
             cursor.grab_mode = CursorGrabMode::Locked;
             cursor.visible = false;

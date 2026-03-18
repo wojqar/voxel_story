@@ -18,7 +18,9 @@ fn debug_performance(
     mut timer: Local<f32>,
 ) {
     *timer += time.delta_secs();
-    if *timer < 1.0 { return; }
+    if *timer < 1.0 {
+        return;
+    }
     *timer = 0.0;
 
     let fps = diagnostics
@@ -31,5 +33,9 @@ fn debug_performance(
         .unwrap_or(0.0);
 
     entries.write(DebugEntry::new("Performance", "FPS", format!("{fps:.1}")));
-    entries.write(DebugEntry::new("Performance", "Frame time", format!("{frame_ms:.2} ms")));
+    entries.write(DebugEntry::new(
+        "Performance",
+        "Frame time",
+        format!("{frame_ms:.2} ms"),
+    ));
 }

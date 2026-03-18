@@ -2,10 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use world_api::DebugMetrics;
 
-pub fn draw_debug_panel(
-    mut contexts: EguiContexts,
-    metrics: Res<DebugMetrics>,
-) {
+pub fn draw_debug_panel(mut contexts: EguiContexts, metrics: Res<DebugMetrics>) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     egui::Window::new("Debug")

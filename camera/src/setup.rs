@@ -10,8 +10,8 @@ pub struct SetupPlugin;
 impl Plugin for SetupPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ClearColor(Color::srgb(0.5, 0.67, 0.85)))
-           .add_systems(Startup, spawn_camera)
-           .add_systems(Startup, spawn_sun);
+            .add_systems(Startup, spawn_camera)
+            .add_systems(Startup, spawn_sun);
     }
 }
 

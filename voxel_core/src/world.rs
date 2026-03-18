@@ -1,5 +1,6 @@
 use crate::chunk::Chunk;
-use crate::coords::{world_to_chunk, IVec3};
+use crate::coords::{IVec3, world_to_chunk};
+use crate::generation::WorldGenerator;
 use crate::voxel::VoxelId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -34,6 +35,23 @@ impl<const SIZE: usize> VoxelWorld<SIZE> {
             dimensions,
             solid_count: 0,
         }
+    }
+
+    pub fn from_generator<G>(dimensions: WorldDimensions, generator: &G) -> Self
+    where
+        G: WorldGenerator<SIZE>,
+    {
+        let mut world = Self::new(dimensions);
+        for z in 0..dimensions.z as i32 {
+            for y in 0..dimensions.y as i32 {
+                for x in 0..dimensions.x as i32 {
+                    let chunk_coord = IVec3::new(x, y, z);
+                    let chunk = generator.generate_chunk(chunk_coord);
+                    world.replace_chunk(chunk_coord, chunk);
+                }
+            }
+        }
+        world
     }
 
     #[inline]
@@ -99,6 +117,41 @@ impl<const SIZE: usize> VoxelWorld<SIZE> {
         changed
     }
 
+    pub fn replace_chunk(&mut self, chunk_coord: IVec3, chunk: Chunk<SIZE>) -> bool {
+        let Some(idx) = self.chunk_index(chunk_coord) else {
+            return false;
+        };
+
+        let prev_solid = self.chunks[idx].count_solid();
+        let new_solid = chunk.count_solid();
+        self.chunks[idx] = chunk;
+        self.solid_count = self
+            .solid_count
+            .saturating_sub(prev_solid)
+            .saturating_add(new_solid);
+        true
+    }
+
+    pub fn column_height(&self, x: i32, z: i32) -> Option<i32> {
+        let max_y = (self.dimensions.y as i32) * (SIZE as i32);
+        if x < 0
+            || z < 0
+            || x >= (self.dimensions.x as i32) * (SIZE as i32)
+            || z >= (self.dimensions.z as i32) * (SIZE as i32)
+        {
+            return None;
+        }
+
+        for y in (0..max_y).rev() {
+            let voxel = self.get_voxel(IVec3::new(x, y, z));
+            if !voxel.is_air() {
+                return Some(y);
+            }
+        }
+
+        None
+    }
+
     #[inline]
     fn chunk_index(&self, chunk_coord: IVec3) -> Option<usize> {
         if chunk_coord.x < 0 || chunk_coord.y < 0 || chunk_coord.z < 0 {
@@ -110,8 +163,10 @@ impl<const SIZE: usize> VoxelWorld<SIZE> {
         if x >= self.dimensions.x || y >= self.dimensions.y || z >= self.dimensions.z {
             return None;
         }
-        Some((x as usize) + (y as usize) * (self.dimensions.x as usize)
-            + (z as usize) * (self.dimensions.x as usize) * (self.dimensions.y as usize))
+        Some(
+            (x as usize)
+                + (y as usize) * (self.dimensions.x as usize)
+                + (z as usize) * (self.dimensions.x as usize) * (self.dimensions.y as usize),
+        )
     }
 }
-

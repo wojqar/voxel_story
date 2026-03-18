@@ -2,8 +2,8 @@ use bevy::app::PostStartup;
 use bevy::prelude::*;
 
 use crate::components::{NeedsRemesh, RegionMesh};
+use crate::region::{REGION_SIZE_CHUNKS, RegionCoord};
 use crate::region::{chunk_to_region, region_origin_world_voxel};
-use crate::region::{RegionCoord, REGION_SIZE_CHUNKS};
 use crate::resources::{
     InflightTasks, MeshingQueue, RegionMap, RegionMaterial, VoxelPalette, VoxelRenderConfig,
 };
@@ -39,10 +39,7 @@ impl Plugin for VoxelRenderPlugin {
     }
 }
 
-fn init_material(
-    mut commands: Commands,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+fn init_material(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     let material = materials.add(StandardMaterial {
         perceptual_roughness: 1.0,
         metallic: 0.0,
@@ -83,11 +80,7 @@ fn seed_initial_regions(
     for z in 0..rz {
         for y in 0..ry {
             for x in 0..rx {
-                ensure_region_entity(
-                    &mut commands,
-                    &mut region_map,
-                    RegionCoord::new(x, y, z),
-                );
+                ensure_region_entity(&mut commands, &mut region_map, RegionCoord::new(x, y, z));
             }
         }
     }
@@ -117,4 +110,3 @@ fn ensure_region_entity(
         .id();
     region_map.0.insert(region, entity);
 }
-

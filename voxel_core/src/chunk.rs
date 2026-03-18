@@ -1,4 +1,4 @@
-use crate::coords::{local_to_index, IVec3};
+use crate::coords::{IVec3, local_to_index};
 use crate::voxel::VoxelId;
 
 #[derive(Debug, Clone)]
@@ -48,4 +48,3 @@ impl<const SIZE: usize> Default for Chunk<SIZE> {
         Self::new_filled(VoxelId::AIR)
     }
 }
-

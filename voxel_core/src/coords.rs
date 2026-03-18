@@ -41,6 +41,9 @@ pub fn world_to_chunk<const SIZE: usize>(world: IVec3) -> (IVec3, IVec3) {
 #[inline]
 pub fn chunk_to_world<const SIZE: usize>(chunk: IVec3, local: IVec3) -> IVec3 {
     let s = SIZE as i32;
-    IVec3::new(chunk.x * s + local.x, chunk.y * s + local.y, chunk.z * s + local.z)
+    IVec3::new(
+        chunk.x * s + local.x,
+        chunk.y * s + local.y,
+        chunk.z * s + local.z,
+    )
 }
-

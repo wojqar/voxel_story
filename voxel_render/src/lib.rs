@@ -6,4 +6,3 @@ mod resources;
 mod tasks;
 
 pub use plugin::VoxelRenderPlugin;
-

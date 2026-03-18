@@ -6,8 +6,8 @@ use bevy_mesh::VertexAttributeValues;
 use futures_lite::future;
 
 use crate::components::{NeedsRemesh, RegionMesh};
-use crate::meshing::{build_region_mesh, MeshData};
-use crate::region::{region_origin_world_voxel, RegionCoord, REGION_SIZE_VOXELS};
+use crate::meshing::{MeshData, build_region_mesh};
+use crate::region::{REGION_SIZE_VOXELS, RegionCoord, region_origin_world_voxel};
 use crate::resources::{
     InflightTasks, MeshingQueue, RegionMap, RegionMaterial, VoxelPalette, VoxelRenderConfig,
 };
@@ -37,10 +37,11 @@ pub fn spawn_meshing_tasks(
     let pool = AsyncComputeTaskPool::get();
 
     let mut spawned = 0usize;
-    while spawned < config.max_spawns_per_frame
-        && inflight.tasks.len() < config.max_inflight_tasks
+    while spawned < config.max_spawns_per_frame && inflight.tasks.len() < config.max_inflight_tasks
     {
-        let Some(region) = queue.pending.pop_front() else { break };
+        let Some(region) = queue.pending.pop_front() else {
+            break;
+        };
         queue.pending_set.remove(&region);
         if inflight.tasks.contains_key(&region) {
             continue;
@@ -63,9 +64,8 @@ pub fn spawn_meshing_tasks(
         let colors = palette.colors.clone();
         let fallback = palette.fallback;
         let task: Task<MeshData> = pool.spawn(async move {
-            let palette_fn = |id: u16| -> [f32; 4] {
-                colors.get(id as usize).copied().unwrap_or(fallback)
-            };
+            let palette_fn =
+                |id: u16| -> [f32; 4] { colors.get(id as usize).copied().unwrap_or(fallback) };
             build_region_mesh(region, &voxels, &palette_fn)
         });
 
@@ -95,7 +95,9 @@ pub fn apply_completed_meshes(
     });
 
     for (region, data) in finished {
-        let Some(&entity) = region_map.0.get(&region) else { continue };
+        let Some(&entity) = region_map.0.get(&region) else {
+            continue;
+        };
 
         if data.is_empty() {
             commands.entity(entity).despawn();
@@ -124,8 +126,10 @@ fn mesh_from_data(data: &MeshData) -> Mesh {
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, data.positions.clone());
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals.clone());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, VertexAttributeValues::Float32x4(data.colors.clone()));
+    mesh.insert_attribute(
+        Mesh::ATTRIBUTE_COLOR,
+        VertexAttributeValues::Float32x4(data.colors.clone()),
+    );
     mesh.insert_indices(Indices::U32(data.indices.clone()));
     mesh
 }
-

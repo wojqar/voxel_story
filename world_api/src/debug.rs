@@ -13,7 +13,8 @@ pub struct DebugMetrics {
 
 impl DebugMetrics {
     pub fn set(&mut self, section: &'static str, key: &'static str, value: impl Display) {
-        let entry = self.sections
+        let entry = self
+            .sections
             .entry(section)
             .or_default()
             .entry(key)

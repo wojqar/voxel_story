@@ -12,4 +12,3 @@ pub use world::{VoxelWorld, WorldDimensions};
 pub const DEFAULT_CHUNK_SIZE: usize = 16;
 pub type DefaultChunk = Chunk<DEFAULT_CHUNK_SIZE>;
 pub type DefaultWorld = VoxelWorld<DEFAULT_CHUNK_SIZE>;
-

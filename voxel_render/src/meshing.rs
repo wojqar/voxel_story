@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::region::{RegionCoord, REGION_SIZE_VOXELS};
+use crate::region::{REGION_SIZE_VOXELS, RegionCoord};
 
 #[derive(Debug, Default)]
 pub struct MeshData {
@@ -117,7 +117,9 @@ pub fn build_region_mesh(
                     while u + w < du {
                         let j = (u + w + v * du) as usize;
                         match mask[j] {
-                            Some(c) if c.voxel == cell.voxel && c.back_face == cell.back_face => w += 1,
+                            Some(c) if c.voxel == cell.voxel && c.back_face == cell.back_face => {
+                                w += 1
+                            }
                             _ => break,
                         }
                     }
@@ -128,7 +130,8 @@ pub fn build_region_mesh(
                         for k in 0..w {
                             let j = (u + k + (v + h) * du) as usize;
                             match mask[j] {
-                                Some(c) if c.voxel == cell.voxel && c.back_face == cell.back_face => {}
+                                Some(c)
+                                    if c.voxel == cell.voxel && c.back_face == cell.back_face => {}
                                 _ => break 'height,
                             }
                         }
@@ -256,4 +259,3 @@ fn tri_normal(p0: [f32; 3], p1: [f32; 3], p2: [f32; 3]) -> [f32; 3] {
 fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
-

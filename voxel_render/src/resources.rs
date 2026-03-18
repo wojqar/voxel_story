@@ -76,4 +76,3 @@ pub struct InflightTasks {
 
 #[derive(Resource)]
 pub struct RegionMaterial(pub Handle<StandardMaterial>);
-

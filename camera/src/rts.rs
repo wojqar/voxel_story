@@ -13,12 +13,18 @@ impl Plugin for RtsCameraPlugin {
             .add_systems(Update, rts_pan.run_if(any_with_component::<RtsActive>))
             .add_systems(Update, rts_rotate.run_if(any_with_component::<RtsActive>))
             .add_systems(Update, rts_zoom.run_if(any_with_component::<RtsActive>))
-            .add_systems(Update, rts_pivot_y
-                .after(rts_pan)
-                .run_if(any_with_component::<RtsActive>))
-            .add_systems(Update, rts_apply_transform
-                .after(rts_pivot_y)
-                .run_if(any_with_component::<RtsActive>));
+            .add_systems(
+                Update,
+                rts_pivot_y
+                    .after(rts_pan)
+                    .run_if(any_with_component::<RtsActive>),
+            )
+            .add_systems(
+                Update,
+                rts_apply_transform
+                    .after(rts_pivot_y)
+                    .run_if(any_with_component::<RtsActive>),
+            );
     }
 }
 
@@ -68,13 +74,21 @@ fn rts_pan(
     for mut cam in query.iter_mut() {
         let yaw_rad = cam.yaw.to_radians();
         let forward = Vec3::new(-yaw_rad.sin(), 0.0, -yaw_rad.cos());
-        let right   = Vec3::new( yaw_rad.cos(), 0.0, -yaw_rad.sin());
+        let right = Vec3::new(yaw_rad.cos(), 0.0, -yaw_rad.sin());
 
         let mut delta = Vec3::ZERO;
-        if keys.pressed(KeyCode::KeyW) { delta += forward; }
-        if keys.pressed(KeyCode::KeyS) { delta -= forward; }
-        if keys.pressed(KeyCode::KeyD) { delta += right; }
-        if keys.pressed(KeyCode::KeyA) { delta -= right; }
+        if keys.pressed(KeyCode::KeyW) {
+            delta += forward;
+        }
+        if keys.pressed(KeyCode::KeyS) {
+            delta -= forward;
+        }
+        if keys.pressed(KeyCode::KeyD) {
+            delta += right;
+        }
+        if keys.pressed(KeyCode::KeyA) {
+            delta -= right;
+        }
 
         if delta != Vec3::ZERO {
             let speed = cam.pan_speed * (cam.zoom / 80.0);
@@ -90,8 +104,12 @@ fn rts_rotate(
     mut query: Query<&mut RtsCamera, With<RtsActive>>,
 ) {
     for mut cam in query.iter_mut() {
-        if keys.pressed(KeyCode::KeyQ) { cam.yaw -= cam.rotate_speed * time.delta_secs(); }
-        if keys.pressed(KeyCode::KeyE) { cam.yaw += cam.rotate_speed * time.delta_secs(); }
+        if keys.pressed(KeyCode::KeyQ) {
+            cam.yaw -= cam.rotate_speed * time.delta_secs();
+        }
+        if keys.pressed(KeyCode::KeyE) {
+            cam.yaw += cam.rotate_speed * time.delta_secs();
+        }
     }
 }
 
@@ -99,10 +117,11 @@ fn rts_zoom(
     scroll: Res<AccumulatedMouseScroll>,
     mut query: Query<&mut RtsCamera, With<RtsActive>>,
 ) {
-    if scroll.delta.y == 0.0 { return; }
+    if scroll.delta.y == 0.0 {
+        return;
+    }
     for mut cam in query.iter_mut() {
-        cam.zoom = (cam.zoom - scroll.delta.y * cam.zoom_speed)
-            .clamp(cam.min_zoom, cam.max_zoom);
+        cam.zoom = (cam.zoom - scroll.delta.y * cam.zoom_speed).clamp(cam.min_zoom, cam.max_zoom);
     }
 }
 
@@ -122,7 +141,9 @@ fn rts_pivot_y(
             cam.terrain_snap = false;
         }
 
-        if !cam.terrain_snap { continue; }
+        if !cam.terrain_snap {
+            continue;
+        }
 
         requests.write(TerrainHeightRequest {
             pos: Vec2::new(cam.pivot.x, cam.pivot.z),
@@ -137,12 +158,10 @@ fn rts_pivot_y(
     }
 }
 
-fn rts_apply_transform(
-    mut query: Query<(&RtsCamera, &mut Transform), With<RtsActive>>,
-) {
+fn rts_apply_transform(mut query: Query<(&RtsCamera, &mut Transform), With<RtsActive>>) {
     for (cam, mut transform) in query.iter_mut() {
         let pitch_rad = PITCH_DEG.to_radians();
-        let yaw_rad   = cam.yaw.to_radians();
+        let yaw_rad = cam.yaw.to_radians();
         let offset = Quat::from_rotation_y(yaw_rad)
             * Vec3::new(0.0, cam.zoom * pitch_rad.sin(), cam.zoom * pitch_rad.cos());
         transform.translation = cam.pivot + offset;
