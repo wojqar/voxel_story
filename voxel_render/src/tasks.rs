@@ -17,9 +17,11 @@ use crate::resources::{
 use voxel_engine::VoxelWorldResource;
 
 pub fn spawn_meshing_tasks(
+    mut commands: Commands,
     world: Res<VoxelWorldResource>,
     palette: Res<VoxelPalette>,
     config: Res<VoxelRenderConfig>,
+    region_map: Res<RegionMap>,
     mut queue: ResMut<MeshingQueue>,
     mut inflight: ResMut<InflightTasks>,
     mut debug_stats: ResMut<MeshingDebugStats>,
@@ -49,6 +51,19 @@ pub fn spawn_meshing_tasks(
         );
         let chunk_dims =
             voxel_core::IVec3::new(REGION_SIZE_CHUNKS, REGION_SIZE_CHUNKS, REGION_SIZE_CHUNKS);
+        if world
+            .0
+            .chunk_aligned_region_solid_count(origin_chunk, chunk_dims)
+            == 0
+        {
+            if let Some(&entity) = region_map.0.get(&region) {
+                commands
+                    .entity(entity)
+                    .remove::<(Mesh3d, MeshMaterial3d<StandardMaterial>, NeedsRemesh)>();
+            }
+            continue;
+        }
+
         let (voxels, solid_voxels) = world
             .0
             .snapshot_chunk_aligned_region_u16(origin_chunk, chunk_dims);
@@ -120,7 +135,7 @@ pub fn apply_completed_meshes(
                 .remove::<(Mesh3d, MeshMaterial3d<StandardMaterial>)>();
         } else {
             debug_stats.record_mesh_output(&data);
-            let mesh = mesh_from_data(&data);
+            let mesh = mesh_from_data(data);
             let handle = meshes.add(mesh);
 
             // Keep region entities stable; only swap render payloads.
@@ -137,14 +152,14 @@ pub fn apply_completed_meshes(
     debug_stats.record_apply(apply_started.elapsed(), completed_count);
 }
 
-fn mesh_from_data(data: &MeshData) -> Mesh {
+fn mesh_from_data(data: MeshData) -> Mesh {
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, data.positions.clone());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals.clone());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, data.positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals);
     mesh.insert_attribute(
         Mesh::ATTRIBUTE_COLOR,
-        VertexAttributeValues::Float32x4(data.colors.clone()),
+        VertexAttributeValues::Float32x4(data.colors),
     );
-    mesh.insert_indices(Indices::U32(data.indices.clone()));
+    mesh.insert_indices(Indices::U32(data.indices));
     mesh
 }

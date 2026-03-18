@@ -11,7 +11,7 @@ use crate::resources::{
 use crate::tasks::{apply_completed_meshes, spawn_meshing_tasks};
 use voxel_engine::VoxelEnginePlugin;
 use voxel_engine::VoxelWorldResource;
-use world_api::{ChunkLoaded, ChunkModified, ChunkUnloaded};
+use world_api::ChunkModified;
 
 pub struct VoxelRenderPlugin;
 
@@ -24,8 +24,6 @@ impl Default for VoxelRenderPlugin {
 impl Plugin for VoxelRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(VoxelEnginePlugin::default())
-            .add_message::<ChunkLoaded>()
-            .add_message::<ChunkUnloaded>()
             .add_message::<ChunkModified>()
             .init_resource::<RegionMap>()
             .init_resource::<MeshingQueue>()
@@ -35,8 +33,11 @@ impl Plugin for VoxelRenderPlugin {
             .init_resource::<VoxelRenderConfig>()
             .add_systems(Startup, init_material)
             .add_systems(PostStartup, seed_initial_regions)
-            .add_systems(Update, handle_chunk_events)
-            .add_systems(Update, spawn_meshing_tasks.after(handle_chunk_events))
+            .add_systems(Update, handle_chunk_modifications)
+            .add_systems(
+                Update,
+                spawn_meshing_tasks.after(handle_chunk_modifications),
+            )
             .add_systems(Update, apply_completed_meshes.after(spawn_meshing_tasks))
             .add_systems(
                 Update,
@@ -54,30 +55,12 @@ fn init_material(mut commands: Commands, mut materials: ResMut<Assets<StandardMa
     commands.insert_resource(RegionMaterial(material));
 }
 
-fn handle_chunk_events(
+fn handle_chunk_modifications(
     mut commands: Commands,
     mut region_map: ResMut<RegionMap>,
     mut queue: ResMut<MeshingQueue>,
-    mut loaded: MessageReader<ChunkLoaded>,
-    mut unloaded: MessageReader<ChunkUnloaded>,
     mut modified: MessageReader<ChunkModified>,
 ) {
-    for ChunkLoaded(chunk) in loaded.read() {
-        ensure_region_entity(
-            &mut commands,
-            &mut region_map,
-            &mut queue,
-            chunk_to_region(*chunk),
-        );
-    }
-    for ChunkUnloaded(chunk) in unloaded.read() {
-        ensure_region_entity(
-            &mut commands,
-            &mut region_map,
-            &mut queue,
-            chunk_to_region(*chunk),
-        );
-    }
     for ChunkModified(chunk) in modified.read() {
         ensure_region_entity(
             &mut commands,
@@ -103,12 +86,27 @@ fn seed_initial_regions(
     for z in 0..rz {
         for y in 0..ry {
             for x in 0..rx {
-                ensure_region_entity(
-                    &mut commands,
-                    &mut region_map,
-                    &mut queue,
-                    RegionCoord::new(x, y, z),
+                let region = RegionCoord::new(x, y, z);
+                let origin_chunk = voxel_core::IVec3::new(
+                    region.x * REGION_SIZE_CHUNKS,
+                    region.y * REGION_SIZE_CHUNKS,
+                    region.z * REGION_SIZE_CHUNKS,
                 );
+                let chunk_dims = voxel_core::IVec3::new(
+                    REGION_SIZE_CHUNKS,
+                    REGION_SIZE_CHUNKS,
+                    REGION_SIZE_CHUNKS,
+                );
+
+                if world
+                    .0
+                    .chunk_aligned_region_solid_count(origin_chunk, chunk_dims)
+                    == 0
+                {
+                    continue;
+                }
+
+                ensure_region_entity(&mut commands, &mut region_map, &mut queue, region);
             }
         }
     }

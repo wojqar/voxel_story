@@ -229,11 +229,8 @@ fn emit_quad(
     out.normals.extend([normal, normal, normal, normal]);
     out.colors.extend([*color, *color, *color, *color]);
 
-    // Winding: ensure triangles face the intended normal across all axis permutations.
-    // (u_axis,v_axis) ordering can flip winding depending on the slice plane, so we
-    // compute a geometric normal and flip indices if needed.
-    let tri_n = tri_normal(p0, p1, p2);
-    let wants_flip = dot3(tri_n, normal) < 0.0;
+    // With the current vertex order, Y-slice faces wind opposite to X/Z slices.
+    let wants_flip = back_face ^ (axis == 1);
 
     if wants_flip {
         out.indices
@@ -242,20 +239,4 @@ fn emit_quad(
         out.indices
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
     }
-}
-
-#[inline]
-fn tri_normal(p0: [f32; 3], p1: [f32; 3], p2: [f32; 3]) -> [f32; 3] {
-    let a = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
-    let b = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
-
-#[inline]
-fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }

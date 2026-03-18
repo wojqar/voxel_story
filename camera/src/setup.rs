@@ -1,6 +1,6 @@
 use bevy::light::light_consts::lux;
 use bevy::prelude::*;
-use world_api::{ActiveCamera, ChunkObserver};
+use world_api::ActiveCamera;
 
 use crate::rts::RtsCamera;
 use crate::spectator::{SpectatorActive, SpectatorCamera};
@@ -23,7 +23,6 @@ fn spawn_camera(mut commands: Commands) {
         SpectatorActive,
         RtsCamera::default(),
         ActiveCamera,
-        ChunkObserver::default(),
     ));
 }
 

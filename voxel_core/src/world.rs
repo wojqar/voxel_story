@@ -142,6 +142,37 @@ impl<const SIZE: usize> VoxelWorld<SIZE> {
             .and_then(|idx| self.column_tops[idx])
     }
 
+    pub fn chunk_aligned_region_solid_count(
+        &self,
+        origin_chunk: IVec3,
+        chunk_dimensions: IVec3,
+    ) -> usize {
+        debug_assert!(chunk_dimensions.x >= 0);
+        debug_assert!(chunk_dimensions.y >= 0);
+        debug_assert!(chunk_dimensions.z >= 0);
+
+        let mut solid_voxels = 0usize;
+
+        for chunk_z in 0..chunk_dimensions.z {
+            for chunk_y in 0..chunk_dimensions.y {
+                for chunk_x in 0..chunk_dimensions.x {
+                    let chunk_coord = IVec3::new(
+                        origin_chunk.x + chunk_x,
+                        origin_chunk.y + chunk_y,
+                        origin_chunk.z + chunk_z,
+                    );
+                    let Some(chunk) = self.get_chunk(chunk_coord) else {
+                        continue;
+                    };
+
+                    solid_voxels += chunk.count_solid();
+                }
+            }
+        }
+
+        solid_voxels
+    }
+
     pub fn snapshot_chunk_aligned_region_u16(
         &self,
         origin_chunk: IVec3,

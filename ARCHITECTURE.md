@@ -1,212 +1,305 @@
-# Architecture — voxel_story
+# Architecture - voxel_story
 
-## Zasady niezmienne
+## Invariants
 
-1. Zależności tylko w dół hierarchii — nigdy wstecz ani między równorzędnymi crate'ami
-2. Warstwy komunikują się wyłącznie przez eventy z `world_api`
-3. Kosztowne operacje zawsze async — główny wątek nie blokuje
-4. Logika nie zależy od prezentacji
+1. Dependencies only point downward through the workspace graph.
+2. Cross-crate communication goes through `world_api` messages and shared marker types.
+3. Expensive render work stays off the main thread when possible.
+4. The world is fixed-size at runtime. There is no chunk load/unload system.
 
 ---
 
 ## Workspace
 
-```
+```text
 voxel_story/
-├── world_api/        # Wspólne typy eventów i komponentów, zero logiki
-├── voxel_core/       # Dane i logika świata, czysty Rust
-├── voxel_engine/     # Bevy ECS — zarządzanie światem, generacja
-├── voxel_render/     # Meshing, GPU, frustum culling
-├── camera/           # RtsCamera, SpectatorCamera, cursor ray
-├── ui/               # Debug overlay, diagnostyki
-└── voxel_story/      # Binarny entry point, łączy wszystko
+|- world_api/        # Shared messages, debug contracts, marker components
+|- voxel_core/       # Pure Rust voxel data structures and generation
+|- voxel_engine/     # Bevy ECS world bootstrap and gameplay-facing queries
+|- voxel_render/     # Region meshing, async mesh tasks, GPU upload
+|- camera/           # Spectator + RTS camera logic
+|- ui/               # Debug overlay and diagnostics
+\- voxel_story/      # Binary entry point
 ```
 
-Bevy: `0.18.1` | Rust edition: `2024` | Chunk size: `16³` voxeli | Region size: `4×4×4` chunki (`64³` voxeli)
+Bevy: `0.18.1`
+Rust edition: `2024`
+Chunk size: `16^3` voxels
+Region size: `4 x 4 x 4` chunks = `64^3` voxels
 
 ---
 
-## Hierarchia zależności
+## Dependency Graph
 
-```
+```text
 world_api
-  ├── voxel_core
-  │     └── voxel_engine
-  │           └── voxel_render
-  ├── camera
-  ├── ui
-  └── voxel_story → all
+  |- voxel_core
+  |   \- voxel_engine
+  |       \- voxel_render
+  |- camera
+  |- ui
+  \- voxel_story -> all
 ```
 
-`camera` i `ui` zależą wyłącznie od `world_api` i Bevy — zero cross-coupling z logiką silnika.
+`camera` and `ui` do not depend on engine or render internals.
 
 ---
 
 ## world_api
 
-Warstwa kontraktów. Zero logiki, zero systemów Bevy. Kompiluje się jako pierwsza.
+Contract crate only. No systems, no engine logic.
 
-**Events (`events.rs`):**
+### Messages
 
-| Event | Kierunek | Opis |
+| Message | Direction | Purpose |
 |---|---|---|
-| `CursorRay { origin, direction }` | camera → * | Ray w world-space z pozycji kursora |
-| `ChunkModified(IVec3)` | voxel_engine → * | Zmiana danych chunka |
-| `DebugEntry { section, key, value }` | * → ui | Wpis do debug panelu |
+| `CursorRay { origin, direction }` | camera -> * | Cursor ray in world space |
+| `TerrainHeightRequest { pos }` | camera -> voxel_engine | Query terrain height for RTS camera |
+| `TerrainHeightResponse { height }` | voxel_engine -> camera | Height response |
+| `BlockTargeted { pos, normal }` | gameplay -> * | Targeted voxel feedback |
+| `BlockTargetCleared` | gameplay -> * | Clears target feedback |
+| `BlockInteract { pos, action }` | gameplay -> voxel_engine | Terrain edit request |
+| `ChunkModified(IVec3)` | voxel_engine -> voxel_render | Marks a chunk's region dirty |
+| `DebugEntry { section, key, value }` | * -> ui | Debug panel entry |
 
-**Components (`components.rs`):**
+### Components
 
 ```rust
-ActiveCamera     // Marker — kamera aktywna; używana do viewport_to_world
-ChunkObserver {
-    load_distance:   u32,
-    unload_distance: u32,
-}
+ActiveCamera // marker for the camera used by cursor-ray systems
 ```
+
+There is no observer component for chunk streaming because the world stays fully resident.
 
 ---
 
 ## voxel_core
 
-Czysty Rust. Bez Bevy, GPU, async. Zero zewnętrznych zależności.
+Pure Rust world representation. No Bevy, no rendering.
 
-**`VoxelId(u16)`** — ID voxela. `0` = powietrze. `is_air()` → `id == 0`.
+### Core Types
 
-**`Chunk<const SIZE: usize = 16>`** — gęsty array voxeli `SIZE³`. Storage: `Vec<VoxelId>` z indeksowaniem `x + y*SIZE + z*SIZE²`. Operacje: `get(IVec3)`, `set(IVec3, VoxelId) → bool`, `is_empty()`, `count_solid()`.
+- `VoxelId(u16)`: voxel identifier, `0` is air.
+- `Chunk<const SIZE: usize = 16>`: dense voxel storage plus cached `solid_count` and per-column top voxel.
+- `WorldDimensions { x, y, z }`: world size in chunks.
+- `VoxelWorld<const SIZE: usize = 16>`: flat chunk array with O(1) lookup.
+- `WorldGenerator`: trait for chunk generation.
 
-**`coords.rs`** — konwersje współrzędnych bez alokacji:
-- `world_to_chunk::<SIZE>(IVec3) → (chunk_coord, local_coord)` — używa `div_euclid`/`rem_euclid` (poprawne dla ujemnych)
-- `chunk_to_world::<SIZE>(chunk, local) → IVec3`
-- `local_to_index::<SIZE>(IVec3) → usize`
+### Coordinate Utilities
 
-**`VoxelWorld<const SIZE: usize = 16>`** — płaska `Vec<Chunk>`, lookup O(1). Utrzymuje `solid_count`. API: `get_voxel`, `set_voxel`, `get_chunk`, `get_chunk_mut`, `contains`.
+`coords.rs` provides:
 
-**`WorldGenerator` trait** — `generate_chunk(chunk_coord: IVec3) → Chunk`. Implementacje dostarczane zewnętrznie.
+- `world_to_chunk::<SIZE>(IVec3) -> (chunk_coord, local_coord)`
+- `chunk_to_world::<SIZE>(chunk, local) -> IVec3`
+- `local_to_index::<SIZE>(IVec3) -> usize`
+
+All conversions use Euclidean division so negative coordinates behave correctly even though the current world bounds are non-negative.
+
+### World Data Model
+
+`VoxelWorld` stores:
+
+- `chunks: Vec<Chunk<SIZE>>`
+- `column_tops: Vec<Option<i32>>`
+- `solid_count: usize`
+- `dimensions: WorldDimensions`
+
+Important operations:
+
+- `get_voxel` / `set_voxel`
+- `get_chunk` / `get_chunk_mut`
+- `replace_chunk`
+- `column_height`
+- `snapshot_chunk_aligned_region_u16`
+- `chunk_aligned_region_solid_count`
+
+`column_height` is O(1) after updates because both `Chunk` and `VoxelWorld` maintain cached top-of-column data.
 
 ---
 
 ## voxel_engine
 
-Bevy ECS nad `voxel_core`. Uruchamia się headless (`MinimalPlugins`).
+Bevy ECS layer over `voxel_core`. Responsible for building the fixed-size world and answering engine-side queries.
 
-**Resources:**
+### Resources
 
 ```rust
 WorldConfig {
-    dimensions: WorldDimensions, // Domyślnie 20×8×20 chunków
+    dimensions: WorldDimensions, // default: 20 x 8 x 20 chunks
     seed: u64,
 }
+
 VoxelWorldResource(DefaultWorld)
 ```
 
-**Startup sequence:**
-1. `init_voxel_world` — tworzy `VoxelWorldResource` z `WorldConfig::dimensions` (pusty świat)
+### Startup Flow
+
+`init_voxel_world`:
+
+1. Creates `CastleStoryGenerator` from `WorldConfig`.
+2. Allocates an empty `DefaultWorld`.
+3. Iterates every chunk coordinate in bounds.
+4. Generates each chunk synchronously.
+5. Stores it with `replace_chunk`.
+6. Inserts `VoxelWorldResource`.
+
+The whole world is generated up front. Nothing streams in later.
+
+### Runtime Queries
+
+`respond_terrain_height_requests` answers RTS camera height probes using cached column heights, with a fallback check at `y = 0` when the column is empty.
 
 ---
 
 ## voxel_render
 
-Bevy rendering. Wciąga `VoxelEnginePlugin` jako dependency.
+Rendering layer for the fixed-size voxel world.
 
-**Region** — jednostka renderingu: `4×4×4` chunki = `64³` voxeli = jeden draw call. Domyślny świat 20×8×20 chunków → `5×2×5` = 50 regionów, maksymalnie 50 draw calls.
+### Region Model
 
-**Pipeline:**
+A region is `4 x 4 x 4` chunks. Regions are the meshing and draw-call unit.
 
+For the default world size `20 x 8 x 20`, the maximum region grid is `5 x 2 x 5`, so at most 50 region entities ever need render payloads.
+
+### Resources
+
+- `RegionMap`: maps `RegionCoord` to a stable entity
+- `MeshingQueue`: deduplicated FIFO queue of dirty regions
+- `InflightTasks`: async mesh tasks keyed by region
+- `VoxelPalette`: voxel id -> RGBA lookup table
+- `VoxelRenderConfig`: meshing throttles
+- `RegionMaterial`: shared material handle
+
+### Pipeline
+
+```text
+PostStartup:
+    seed_initial_regions
+        -> scan all region bounds
+        -> spawn entities only for regions with solid voxels
+        -> mark them NeedsRemesh
+
+Update:
+    handle_chunk_modifications
+        -> ChunkModified
+        -> map chunk to region
+        -> enqueue region and mark NeedsRemesh
+
+    spawn_meshing_tasks
+        -> drain queue within max_spawns_per_frame
+        -> skip regions that are now fully empty
+        -> snapshot non-empty 64^3 voxel regions on main thread
+        -> spawn async greedy meshing tasks
+
+    apply_completed_meshes
+        -> poll finished tasks
+        -> empty mesh: remove Mesh3d + material components
+        -> non-empty mesh: upload mesh and attach render components
+        -> clear NeedsRemesh when no requeue is pending
 ```
-seed_initial_regions (PostStartup)
-    → spawn Entity per region z NeedsRemesh
 
-handle_chunk_events (Update)
-    → ChunkModified → insert NeedsRemesh na region
+### Meshing
 
-spawn_meshing_tasks (Update, after handle_chunk_events)
-    → coalesce NeedsRemesh → MeshingQueue
-    → max_spawns_per_frame = 2, max_inflight_tasks = 8
-    → snapshot voxels z VoxelWorld (main thread, bounded copy 64³)
-    → spawn async MeshTask do AsyncComputeTaskPool
+`build_region_mesh` performs 3-axis greedy meshing over a dense `u16` voxel snapshot.
 
-apply_completed_meshes (Update, after spawn_meshing_tasks)
-    → poll tasks (non-blocking)
-    → pusty mesh → despawn entity
-    → niepusty → upload Mesh → insert Mesh3d + MeshMaterial3d
-```
+Implementation details:
 
-**Greedy meshing** — 3-osiowy algorytm z 2D maską per slice. Dla każdej osi buduje maskę widocznych ścian (boundary solid/air), greedy merge prostokątów po U i V, winding order liczony geometrycznie. Output: `positions`, `normals`, `colors` (RGBA z palety), `indices` (U32).
+- Builds a 2D face mask for each slice.
+- Greedily merges rectangles with matching voxel id and face direction.
+- Emits positions, normals, colors, and indices.
+- Uses a direct winding rule per axis instead of a geometric normal test per quad.
 
-**VoxelPalette** — `Vec<[f32; 4]>` indeksowany przez `VoxelId.0`. Fallback: magenta. Domyślna paleta: air, dirt, grass, stone.
+### Optimization Notes
 
-**MeshingQueue** — `VecDeque` + `HashSet` dla deduplikacji — region trafia do kolejki tylko raz mimo wielokrotnych eventów.
+The current render path avoids a few obvious fixed-world costs:
+
+- No chunk load/unload messages.
+- No startup meshing for fully empty regions.
+- No async task spawn for empty dirty regions.
+- Mesh upload moves vertex/index buffers into Bevy instead of cloning them.
 
 ---
 
 ## camera
 
-Zależności: tylko `world_api` i Bevy. Dwa tryby kamery na jednej encji.
+Depends only on `world_api` and Bevy.
 
-**Encja kamery** spawned w `setup.rs`:
+The camera entity contains:
+
 ```rust
-Camera3d, Transform,
-SpectatorCamera, SpectatorActive,
-RtsCamera,
-ActiveCamera,
-ChunkObserver::default(), // load: 8, unload: 12 chunków
+Camera3d
+Transform
+SpectatorCamera
+SpectatorActive
+RtsCamera
+ActiveCamera
 ```
 
-**SpectatorCamera** — swobodny lot WSAD + mysz (`AccumulatedMouseMotion`). Scroll zmienia prędkość lotu (1..200).
+### Modes
 
-**RtsCamera** — pivot + offset:
-- `pivot: Vec3`, `yaw: f32` (Q/E), `zoom: f32` (scroll, 15..250), pitch stały `45°`
-- `translation = pivot + Quat::from_rotation_y(yaw) * Vec3(0, zoom*sin45, zoom*cos45)`
-- PageUp/PageDown → ręczna zmiana `pivot.y`
+- `SpectatorCamera`: free-fly movement.
+- `RtsCamera`: pivot-based RTS camera with terrain height sampling.
+- `SwitchingPlugin`: toggles between the two modes.
+- `CursorRayPlugin`: emits `CursorRay` each frame while the cursor is inside the viewport.
 
-**SwitchingPlugin** — Tab toggleuje tryb. Spectator→RTS: unlock kursor, swap markerów. RTS→Spectator: lock kursor, synchronizuje `yaw/pitch` z `Transform.rotation`.
-
-**CursorRayPlugin** — `camera.viewport_to_world()` → wysyła `CursorRay` każdą klatkę gdy kursor w oknie.
+There is no render-distance or chunk-observer state on the camera.
 
 ---
 
 ## ui
 
-Zależności: `world_api`, Bevy, `bevy_egui`.
+Depends on `world_api`, Bevy, and `bevy_egui`.
 
-**DebugUiPlugin** — egui window `"Debug"` w lewym górnym rogu. `DebugEntry` eventy → `DebugMetrics` Resource (`BTreeMap<section, BTreeMap<key, value>>`) → panel.
-
-**DiagnosticsPlugin** — wysyła `DebugEntry` co 1s: FPS (smoothed), frame time ms.
+- `DebugUiPlugin`: displays grouped `DebugEntry` values.
+- `DiagnosticsPlugin`: publishes FPS and frame-time metrics.
 
 ---
 
-## voxel_story (entry point)
+## voxel_story
+
+Entry-point crate that wires everything together.
+
+### Full App
 
 ```rust
-// Pełna gra
 App::new()
-    .add_plugins(DefaultPlugins.set(WindowPlugin { present_mode: PresentMode::Immediate }))
-    .add_plugins(VoxelRenderPlugin::default()) // wciąga VoxelEnginePlugin
+    .add_plugins(DefaultPlugins.set(WindowPlugin {
+        present_mode: PresentMode::Immediate,
+        ..default()
+    }))
+    .add_plugins(VoxelRenderPlugin::default())
     .add_plugins(CameraPlugin)
     .add_plugins(UiPlugin)
     .run();
+```
 
-// Headless
+### Headless Engine
+
+```rust
 App::new()
     .add_plugins(MinimalPlugins)
     .add_plugins(VoxelEnginePlugin::default())
     .run();
 ```
 
-`PresentMode::Immediate` — brak V-Sync. Benchmarki: 130 FPS / GTX 1060, 80 FPS / 780M.
-
 ---
 
-## Przepływ danych — inicjalizacja świata
+## World Initialization Flow
 
-```
+```text
 Startup:
-    init_voxel_world         → VoxelWorldResource (pusty świat)
+    init_voxel_world
+        -> generate every chunk in bounds
+        -> build VoxelWorldResource
 
 PostStartup:
-    seed_initial_regions     → spawn Entity per region z NeedsRemesh
+    seed_initial_regions
+        -> create render entities only for non-empty regions
+        -> queue initial remesh work
 
-Update (klatka 1+):
-    spawn_meshing_tasks      → max 2 taski/klatkę → AsyncComputeTaskPool
-    apply_completed_meshes   → poll → Mesh3d upload
+Update:
+    spawn_meshing_tasks
+    apply_completed_meshes
+    emit debug metrics
 ```
+
+This architecture is optimized for a small, always-loaded world rather than an infinite streamed one.

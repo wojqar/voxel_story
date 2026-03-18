@@ -38,10 +38,4 @@ pub enum InteractAction {
 }
 
 #[derive(Message, Clone)]
-pub struct ChunkLoaded(pub IVec3);
-
-#[derive(Message, Clone)]
-pub struct ChunkUnloaded(pub IVec3);
-
-#[derive(Message, Clone)]
 pub struct ChunkModified(pub IVec3);
