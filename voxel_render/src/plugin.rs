@@ -2,6 +2,7 @@ use bevy::app::PostStartup;
 use bevy::prelude::*;
 
 use crate::components::{NeedsRemesh, RegionMesh};
+use crate::debug::{MeshingDebugStats, emit_meshing_debug_entries};
 use crate::region::{REGION_SIZE_CHUNKS, RegionCoord};
 use crate::region::{chunk_to_region, region_origin_world_voxel};
 use crate::resources::{
@@ -29,13 +30,15 @@ impl Plugin for VoxelRenderPlugin {
             .init_resource::<RegionMap>()
             .init_resource::<MeshingQueue>()
             .init_resource::<InflightTasks>()
+            .init_resource::<MeshingDebugStats>()
             .init_resource::<VoxelPalette>()
             .init_resource::<VoxelRenderConfig>()
             .add_systems(Startup, init_material)
             .add_systems(PostStartup, seed_initial_regions)
             .add_systems(Update, handle_chunk_events)
             .add_systems(Update, spawn_meshing_tasks.after(handle_chunk_events))
-            .add_systems(Update, apply_completed_meshes.after(spawn_meshing_tasks));
+            .add_systems(Update, apply_completed_meshes.after(spawn_meshing_tasks))
+            .add_systems(Update, emit_meshing_debug_entries.after(apply_completed_meshes));
     }
 }
 

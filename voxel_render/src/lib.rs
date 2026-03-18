@@ -1,4 +1,5 @@
 mod components;
+mod debug;
 mod meshing;
 mod plugin;
 mod region;

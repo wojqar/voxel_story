@@ -1,3 +1,4 @@
+mod debug;
 mod plugin;
 mod resources;
 

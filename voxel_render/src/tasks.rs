@@ -4,12 +4,15 @@ use bevy::tasks::{AsyncComputeTaskPool, Task};
 use bevy_mesh::Indices;
 use bevy_mesh::VertexAttributeValues;
 use futures_lite::future;
+use std::time::Instant;
 
 use crate::components::{NeedsRemesh, RegionMesh};
+use crate::debug::MeshingDebugStats;
 use crate::meshing::{MeshData, build_region_mesh};
 use crate::region::{REGION_SIZE_VOXELS, RegionCoord, region_origin_world_voxel};
 use crate::resources::{
-    InflightTasks, MeshingQueue, RegionMap, RegionMaterial, VoxelPalette, VoxelRenderConfig,
+    InflightMeshTask, InflightTasks, MeshTaskOutput, MeshingQueue, RegionMap, RegionMaterial,
+    VoxelPalette, VoxelRenderConfig,
 };
 use voxel_engine::VoxelWorldResource;
 
@@ -23,6 +26,7 @@ pub fn spawn_meshing_tasks(
     config: Res<VoxelRenderConfig>,
     mut queue: ResMut<MeshingQueue>,
     mut inflight: ResMut<InflightTasks>,
+    mut debug_stats: ResMut<MeshingDebugStats>,
     mut query: Query<(Entity, &RegionMesh), With<NeedsRemesh>>,
 ) {
     if inflight.tasks.len() >= config.max_inflight_tasks {
@@ -50,28 +54,48 @@ pub fn spawn_meshing_tasks(
         // Snapshot region voxel ids on main thread (bounded copy).
         let origin = region_origin_world_voxel(region);
         let n = REGION_SIZE_VOXELS;
+        let snapshot_started = Instant::now();
+        let mut solid_voxels = 0usize;
         let mut voxels = vec![0u16; (n * n * n) as usize];
         for z in 0..n {
             for y in 0..n {
                 for x in 0..n {
                     let p = IVec3::new(origin.x + x, origin.y + y, origin.z + z);
                     let v = world.0.get_voxel(bevy_to_core(p)).0;
+                    if v != 0 {
+                        solid_voxels += 1;
+                    }
                     voxels[(x + y * n + z * n * n) as usize] = v;
                 }
             }
         }
+        debug_stats.record_snapshot(snapshot_started.elapsed(), solid_voxels);
 
         let colors = palette.colors.clone();
         let fallback = palette.fallback;
-        let task: Task<MeshData> = pool.spawn(async move {
+        let task_started = snapshot_started;
+        let task: Task<MeshTaskOutput> = pool.spawn(async move {
+            let build_started = Instant::now();
             let palette_fn =
                 |id: u16| -> [f32; 4] { colors.get(id as usize).copied().unwrap_or(fallback) };
-            build_region_mesh(region, &voxels, &palette_fn)
+            let mesh = build_region_mesh(region, &voxels, &palette_fn);
+            MeshTaskOutput {
+                mesh,
+                build_duration: build_started.elapsed(),
+            }
         });
 
-        inflight.tasks.insert(region, task);
+        inflight.tasks.insert(
+            region,
+            InflightMeshTask {
+                task,
+                started_at: task_started,
+            },
+        );
         spawned += 1;
     }
+
+    debug_stats.record_spawn_batch(spawned);
 }
 
 pub fn apply_completed_meshes(
@@ -80,31 +104,40 @@ pub fn apply_completed_meshes(
     mut region_map: ResMut<RegionMap>,
     mut inflight: ResMut<InflightTasks>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut debug_stats: ResMut<MeshingDebugStats>,
     needs_remesh_q: Query<Entity, With<NeedsRemesh>>,
     transform_q: Query<&Transform>,
 ) {
-    let mut finished: Vec<(RegionCoord, MeshData)> = Vec::new();
+    let apply_started = Instant::now();
+    let mut finished: Vec<(RegionCoord, MeshTaskOutput, std::time::Duration)> = Vec::new();
 
     inflight.tasks.retain(|region, task| {
-        if let Some(data) = future::block_on(future::poll_once(task)) {
-            finished.push((*region, data));
+        if let Some(data) = future::block_on(future::poll_once(&mut task.task)) {
+            finished.push((*region, data, task.started_at.elapsed()));
             false
         } else {
             true
         }
     });
 
-    for (region, data) in finished {
+    let completed_count = finished.len();
+
+    for (region, output, ready_latency) in finished {
+        debug_stats.record_task_finished(region, output.build_duration, ready_latency);
+
+        let data = output.mesh;
         let Some(&entity) = region_map.0.get(&region) else {
             continue;
         };
 
         if data.is_empty() {
+            debug_stats.record_empty_mesh();
             commands.entity(entity).despawn();
             region_map.0.remove(&region);
             continue;
         }
 
+        debug_stats.record_mesh_output(&data);
         let mesh = mesh_from_data(&data);
         let handle = meshes.add(mesh);
 
@@ -120,6 +153,8 @@ pub fn apply_completed_meshes(
             commands.entity(entity).remove::<NeedsRemesh>();
         }
     }
+
+    debug_stats.record_apply(apply_started.elapsed(), completed_count);
 }
 
 fn mesh_from_data(data: &MeshData) -> Mesh {

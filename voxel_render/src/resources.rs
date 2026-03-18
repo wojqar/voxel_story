@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::{Duration, Instant};
 
 use bevy::prelude::*;
 use bevy::tasks::Task;
@@ -69,9 +70,19 @@ impl MeshingQueue {
     }
 }
 
+pub struct MeshTaskOutput {
+    pub mesh: MeshData,
+    pub build_duration: Duration,
+}
+
+pub struct InflightMeshTask {
+    pub task: Task<MeshTaskOutput>,
+    pub started_at: Instant,
+}
+
 #[derive(Resource, Default)]
 pub struct InflightTasks {
-    pub tasks: HashMap<RegionCoord, Task<MeshData>>,
+    pub tasks: HashMap<RegionCoord, InflightMeshTask>,
 }
 
 #[derive(Resource)]
