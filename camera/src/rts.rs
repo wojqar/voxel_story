@@ -3,6 +3,9 @@ use bevy::prelude::*;
 use world_api::{TerrainHeightRequest, TerrainHeightResponse};
 
 const PITCH_DEG: f32 = 45.0;
+const LOOK_INDICATOR_HEIGHT: f32 = 0.25;
+const LOOK_INDICATOR_RADIUS: f32 = 0.4;
+const LOOK_INDICATOR_COLOR: Color = Color::srgb(1.0, 0.84, 0.25);
 
 pub struct RtsCameraPlugin;
 
@@ -23,6 +26,12 @@ impl Plugin for RtsCameraPlugin {
                 Update,
                 rts_apply_transform
                     .after(rts_pivot_y)
+                    .run_if(any_with_component::<RtsActive>),
+            )
+            .add_systems(
+                Update,
+                draw_look_indicator
+                    .after(rts_apply_transform)
                     .run_if(any_with_component::<RtsActive>),
             );
     }
@@ -145,13 +154,15 @@ fn rts_pivot_y(
             continue;
         }
 
+        for response in responses.read() {
+            if let Some(height) = response.height {
+                cam.pivot_y_target = height;
+            }
+        }
+
         requests.write(TerrainHeightRequest {
             pos: Vec2::new(cam.pivot.x, cam.pivot.z),
         });
-
-        for response in responses.read() {
-            cam.pivot_y_target = response.height;
-        }
 
         let t = (cam.pivot_y_lerp_speed * time.delta_secs()).min(1.0);
         cam.pivot.y += (cam.pivot_y_target - cam.pivot.y) * t;
@@ -160,11 +171,45 @@ fn rts_pivot_y(
 
 fn rts_apply_transform(mut query: Query<(&RtsCamera, &mut Transform), With<RtsActive>>) {
     for (cam, mut transform) in query.iter_mut() {
-        let pitch_rad = PITCH_DEG.to_radians();
-        let yaw_rad = cam.yaw.to_radians();
-        let offset = Quat::from_rotation_y(yaw_rad)
-            * Vec3::new(0.0, cam.zoom * pitch_rad.sin(), cam.zoom * pitch_rad.cos());
-        transform.translation = cam.pivot + offset;
-        transform.look_at(cam.pivot, Vec3::Y);
+        apply_rts_transform(cam, &mut transform);
     }
+}
+
+fn draw_look_indicator(
+    mut gizmos: Gizmos,
+    query: Query<(&RtsCamera, &Transform), With<RtsActive>>,
+) {
+    for (cam, transform) in query.iter() {
+        let marker_pos = cam.pivot + Vec3::Y * LOOK_INDICATOR_HEIGHT;
+        let ring_rotation = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
+        let cross_half = LOOK_INDICATOR_RADIUS * 0.45;
+
+        gizmos
+            .circle(
+                Isometry3d::new(marker_pos, ring_rotation),
+                LOOK_INDICATOR_RADIUS,
+                LOOK_INDICATOR_COLOR,
+            )
+            .resolution(48);
+        gizmos.line(
+            marker_pos + Vec3::X * cross_half,
+            marker_pos - Vec3::X * cross_half,
+            LOOK_INDICATOR_COLOR,
+        );
+        gizmos.line(
+            marker_pos + Vec3::Z * cross_half,
+            marker_pos - Vec3::Z * cross_half,
+            LOOK_INDICATOR_COLOR,
+        );
+        gizmos.line(transform.translation, marker_pos, Color::WHITE);
+    }
+}
+
+pub(crate) fn apply_rts_transform(cam: &RtsCamera, transform: &mut Transform) {
+    let pitch_rad = PITCH_DEG.to_radians();
+    let yaw_rad = cam.yaw.to_radians();
+    let offset = Quat::from_rotation_y(yaw_rad)
+        * Vec3::new(0.0, cam.zoom * pitch_rad.sin(), cam.zoom * pitch_rad.cos());
+    transform.translation = cam.pivot + offset;
+    transform.look_at(cam.pivot, Vec3::Y);
 }

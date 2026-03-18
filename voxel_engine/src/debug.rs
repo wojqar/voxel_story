@@ -41,8 +41,8 @@ pub struct TerrainHeightDebugStats {
     batch_time_ms: SampleStats,
     batch_size: SampleStats,
     requests_total: u64,
-    fallback_total: u64,
-    last_query: Option<((i32, i32), f32)>,
+    misses_total: u64,
+    last_query: Option<((i32, i32), Option<f32>)>,
     slowest_query: Option<(i32, i32)>,
     slowest_query_ms: f64,
 }
@@ -51,8 +51,8 @@ impl TerrainHeightDebugStats {
     pub fn record_request(
         &mut self,
         query_pos: (i32, i32),
-        height: f32,
-        used_fallback: bool,
+        height: Option<f32>,
+        missing_terrain: bool,
         duration: Duration,
     ) {
         let duration_ms = duration.as_secs_f64() * 1_000.0;
@@ -60,8 +60,8 @@ impl TerrainHeightDebugStats {
         self.requests_total += 1;
         self.last_query = Some((query_pos, height));
 
-        if used_fallback {
-            self.fallback_total += 1;
+        if missing_terrain {
+            self.misses_total += 1;
         }
 
         if duration_ms >= self.slowest_query_ms {
@@ -191,8 +191,8 @@ pub fn emit_engine_debug_entries(
     ));
     entries.write(DebugEntry::new(
         "Terrain",
-        "Fallback total",
-        terrain.fallback_total,
+        "Misses total",
+        terrain.misses_total,
     ));
     entries.write(DebugEntry::new(
         "Terrain",
@@ -214,7 +214,13 @@ pub fn emit_engine_debug_entries(
         entries.write(DebugEntry::new(
             "Terrain",
             "Last sample",
-            format!("{} -> {:.2}", format_ivec2(pos), height),
+            format!(
+                "{} -> {}",
+                format_ivec2(pos),
+                height
+                    .map(|value| format!("{value:.2}"))
+                    .unwrap_or_else(|| "none".to_string())
+            ),
         ));
     }
 

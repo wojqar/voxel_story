@@ -13,7 +13,7 @@ pub struct TerrainHeightRequest {
 
 #[derive(Message, Clone)]
 pub struct TerrainHeightResponse {
-    pub height: f32,
+    pub height: Option<f32>,
 }
 
 #[derive(Message, Clone)]
